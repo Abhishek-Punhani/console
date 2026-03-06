@@ -299,7 +299,26 @@ git clone https://github.com/kubestellar/console.git
 cd console
 ```
 
-2. **Start in dev mode** (no OAuth required)
+2. **Start everything with one command** (no OAuth required)
+
+```bash
+make dev
+```
+
+Starts all three services:
+
+- **Frontend** — Vite dev server with HMR at http://localhost:5174
+- **Backend** — Go server at http://localhost:8080
+- **kc-agent** — Local agent bridge at http://localhost:8585
+
+If `kc-agent` is not installed, `make dev` installs it automatically:
+
+- **macOS**: via Homebrew (`brew tap kubestellar/tap && brew install --head kc-agent`)
+- **Linux**: built from source (`go build -o bin/kc-agent ./cmd/kc-agent`, requires Go 1.24+)
+
+Uses a mock `dev-user` account — no GitHub OAuth credentials needed. Press `Ctrl+C` to stop all processes.
+
+Alternatively, use the startup script directly:
 
 ```bash
 ./start-dev.sh

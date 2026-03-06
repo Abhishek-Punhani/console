@@ -1,12 +1,13 @@
 # KubeStellar Console — developer workflow targets
 #
 # Usage:
+#   make dev       Start frontend, backend, and kc-agent (auto-installs kc-agent)
 #   make update    Pull latest, build everything, restart
 #   make build     Build frontend + Go binaries
 #   make restart   Restart all processes via startup-oauth.sh
 #   make help      Show available targets
 
-.PHONY: help build restart update pull lint
+.PHONY: help build restart update pull lint dev
 
 SHELL := /bin/bash
 
@@ -39,3 +40,35 @@ update: pull build restart
 ## lint: Run frontend linter
 lint:
 	cd web && npm run lint
+
+## dev: Start frontend, backend, and kc-agent for local development (no OAuth required)
+## dev: Auto-installs kc-agent if missing (Homebrew on macOS, builds from source on Linux)
+dev:
+	@set -e; \
+	if ! command -v kc-agent >/dev/null 2>&1 && [ ! -x ./bin/kc-agent ]; then \
+		echo "kc-agent not found — installing..."; \
+		if [ "$$(uname)" = "Darwin" ]; then \
+			brew tap kubestellar/tap && brew install --head kc-agent; \
+		else \
+			echo "Building kc-agent from source (requires Go 1.24+)..."; \
+			mkdir -p bin && GOWORK=off go build -o bin/kc-agent ./cmd/kc-agent; \
+		fi; \
+	fi; \
+	KC_AGENT=$$(command -v kc-agent 2>/dev/null || echo ./bin/kc-agent); \
+	trap 'kill 0' INT TERM; \
+	echo "Starting kc-agent ($$KC_AGENT)..."; \
+	$$KC_AGENT & \
+	echo "Starting backend (dev mode)..."; \
+	( source ~/.config/kubestellar-console/env 2>/dev/null || true; \
+	  DEV_MODE=true FRONTEND_URL=http://localhost:5174 GOWORK=off \
+	  go run ./cmd/console/main.go --dev ) & \
+	echo "Starting frontend..."; \
+	( cd web && npm run dev ) & \
+	echo ""; \
+	echo "=== KubeStellar Console (dev mode) ==="; \
+	echo "  Frontend: http://localhost:5174  (Vite HMR)"; \
+	echo "  Backend:  http://localhost:8080"; \
+	echo "  Agent:    http://localhost:8585"; \
+	echo ""; \
+	echo "Press Ctrl+C to stop all processes"; \
+	wait
