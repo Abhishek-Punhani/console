@@ -47,7 +47,7 @@ dev:
 	@set -e; \
 	if ! command -v kc-agent >/dev/null 2>&1 && [ ! -x ./bin/kc-agent ]; then \
 		echo "kc-agent not found — installing..."; \
-		if [ "$$(uname)" = "Darwin" ]; then \
+		if [ "$$(uname)" = "Darwin" ] && command -v brew >/dev/null 2>&1; then \
 			brew tap kubestellar/tap && brew install --head kc-agent; \
 		else \
 			echo "Building kc-agent from source (requires Go 1.24+)..."; \
@@ -55,7 +55,19 @@ dev:
 		fi; \
 	fi; \
 	KC_AGENT=$$(command -v kc-agent 2>/dev/null || echo ./bin/kc-agent); \
-	trap 'kill 0' INT TERM; \
+	if [ ! -x "$$KC_AGENT" ]; then \
+		echo "Error: kc-agent not found at $$KC_AGENT. Install it manually or check the build output above."; \
+		exit 1; \
+	fi; \
+	for p in 8080 5174 8585; do \
+		PID=$$(lsof -ti :$$p 2>/dev/null || true); \
+		if [ -n "$$PID" ]; then \
+			echo "Port $$p in use (PID $$PID) — killing..."; \
+			kill -9 $$PID 2>/dev/null || true; \
+			sleep 1; \
+		fi; \
+	done; \
+	trap 'kill 0' INT TERM EXIT; \
 	echo "Starting kc-agent ($$KC_AGENT)..."; \
 	$$KC_AGENT & \
 	echo "Starting backend (dev mode)..."; \

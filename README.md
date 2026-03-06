@@ -38,6 +38,7 @@ Based on your answers, Console generates an initial dashboard with relevant card
 ### 2. Adaptive Dashboard
 
 Console tracks which cards you interact with most:
+
 - Which cards you hover over and expand
 - How long you focus on different information
 - What actions you take
@@ -125,19 +126,19 @@ nohup ./bin/kc-agent &
 
 #### CLI Flags
 
-| Flag | Description | Default |
-|------|-------------|---------|
-| `--port` | Port to listen on | `8585` |
-| `--kubeconfig` | Path to kubeconfig file | `~/.kube/config` |
-| `--allowed-origins` | Comma-separated list of additional allowed WebSocket origins | (none) |
-| `--version` | Print version and exit | |
+| Flag                | Description                                                  | Default          |
+| ------------------- | ------------------------------------------------------------ | ---------------- |
+| `--port`            | Port to listen on                                            | `8585`           |
+| `--kubeconfig`      | Path to kubeconfig file                                      | `~/.kube/config` |
+| `--allowed-origins` | Comma-separated list of additional allowed WebSocket origins | (none)           |
+| `--version`         | Print version and exit                                       |                  |
 
 #### Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
+| Variable             | Description                                      | Default        |
+| -------------------- | ------------------------------------------------ | -------------- |
 | `KC_ALLOWED_ORIGINS` | Comma-separated list of allowed origins for CORS | localhost only |
-| `KC_AGENT_TOKEN` | Optional shared secret for authentication | (none) |
+| `KC_AGENT_TOKEN`     | Optional shared secret for authentication        | (none)         |
 
 #### Adding Custom Origins
 
@@ -190,21 +191,21 @@ The agent implements several security measures:
 
 ## Available Card Types
 
-| Card Type | Description | Data Source |
-|-----------|-------------|-------------|
-| Cluster Health | Availability graph per cluster | `get_cluster_health` |
-| App Status | Multi-cluster app health | `get_app_status` |
-| Event Stream | Live event feed | `get_events` |
-| Deployment Progress | Rollout status | `get_app_status` |
-| Pod Issues | CrashLoopBackOff, OOMKilled | `find_pod_issues` |
-| Deployment Issues | Stuck rollouts | `find_deployment_issues` |
-| Top Pods | By CPU/memory/restarts | `get_pods` |
-| Resource Capacity | CPU/memory/GPU utilization | `list_cluster_capabilities` |
-| GitOps Drift | Out of sync clusters | `detect_drift` |
-| Security Issues | Privileged, root, host | `check_security_issues` |
-| RBAC Overview | Permission summary | `get_roles` |
-| Policy Violations | OPA Gatekeeper | `list_ownership_violations` |
-| Upgrade Status | Cluster upgrades | `get_upgrade_status` |
+| Card Type           | Description                    | Data Source                 |
+| ------------------- | ------------------------------ | --------------------------- |
+| Cluster Health      | Availability graph per cluster | `get_cluster_health`        |
+| App Status          | Multi-cluster app health       | `get_app_status`            |
+| Event Stream        | Live event feed                | `get_events`                |
+| Deployment Progress | Rollout status                 | `get_app_status`            |
+| Pod Issues          | CrashLoopBackOff, OOMKilled    | `find_pod_issues`           |
+| Deployment Issues   | Stuck rollouts                 | `find_deployment_issues`    |
+| Top Pods            | By CPU/memory/restarts         | `get_pods`                  |
+| Resource Capacity   | CPU/memory/GPU utilization     | `list_cluster_capabilities` |
+| GitOps Drift        | Out of sync clusters           | `detect_drift`              |
+| Security Issues     | Privileged, root, host         | `check_security_issues`     |
+| RBAC Overview       | Permission summary             | `get_roles`                 |
+| Policy Violations   | OPA Gatekeeper                 | `list_ownership_violations` |
+| Upgrade Status      | Cluster upgrades               | `get_upgrade_status`        |
 
 ## Installation
 
@@ -240,14 +241,14 @@ curl -sSL https://raw.githubusercontent.com/kubestellar/console/main/deploy.sh |
 
 Options:
 
-| Flag | Description |
-|------|-------------|
-| `--context, -c <name>` | Kubernetes context (default: current) |
+| Flag                     | Description                              |
+| ------------------------ | ---------------------------------------- |
+| `--context, -c <name>`   | Kubernetes context (default: current)    |
 | `--namespace, -n <name>` | Namespace (default: kubestellar-console) |
-| `--openshift` | Enable OpenShift Route |
-| `--ingress <host>` | Enable Ingress with hostname |
-| `--github-oauth` | Prompt for GitHub OAuth credentials |
-| `--uninstall` | Remove the console |
+| `--openshift`            | Enable OpenShift Route                   |
+| `--ingress <host>`       | Enable Ingress with hostname             |
+| `--github-oauth`         | Prompt for GitHub OAuth credentials      |
+| `--uninstall`            | Remove the console                       |
 
 Examples:
 
@@ -313,7 +314,7 @@ Starts all three services:
 
 If `kc-agent` is not installed, `make dev` installs it automatically:
 
-- **macOS**: via Homebrew (`brew tap kubestellar/tap && brew install --head kc-agent`)
+- **macOS**: via Homebrew (`brew tap kubestellar/tap && brew install --head kc-agent`) — falls back to building from source if Homebrew is not available
 - **Linux**: built from source (`go build -o bin/kc-agent ./cmd/kc-agent`, requires Go 1.24+)
 
 Uses a mock `dev-user` account — no GitHub OAuth credentials needed. Press `Ctrl+C` to stop all processes.
@@ -329,6 +330,7 @@ Opens frontend at http://localhost:5174, backend at http://localhost:8080. Uses 
 3. **Or start with GitHub OAuth**
 
 Create a [GitHub OAuth App](https://github.com/settings/developers) under your **GitHub organization** (not a personal account, so users see an org name in the consent dialog):
+
 - Homepage URL: `http://localhost:5174`
 - Callback URL: `http://localhost:8080/auth/github/callback`
 
@@ -407,16 +409,16 @@ helm install kc kubestellar-console/kubestellar-console \
 
 ### Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PORT` | Server port | `8080` |
-| `DEV_MODE` | Enable dev mode (CORS, hot reload) | `false` |
-| `DATABASE_PATH` | SQLite database path | `./data/console.db` |
-| `GITHUB_CLIENT_ID` | GitHub OAuth client ID | (required) |
-| `GITHUB_CLIENT_SECRET` | GitHub OAuth client secret | (required) |
-| `JWT_SECRET` | JWT signing secret | (auto-generated) |
-| `FRONTEND_URL` | Frontend URL for redirects | `http://localhost:5174` |
-| `CLAUDE_API_KEY` | Claude API key for AI features | (optional) |
+| Variable               | Description                        | Default                 |
+| ---------------------- | ---------------------------------- | ----------------------- |
+| `PORT`                 | Server port                        | `8080`                  |
+| `DEV_MODE`             | Enable dev mode (CORS, hot reload) | `false`                 |
+| `DATABASE_PATH`        | SQLite database path               | `./data/console.db`     |
+| `GITHUB_CLIENT_ID`     | GitHub OAuth client ID             | (required)              |
+| `GITHUB_CLIENT_SECRET` | GitHub OAuth client secret         | (required)              |
+| `JWT_SECRET`           | JWT signing secret                 | (auto-generated)        |
+| `FRONTEND_URL`         | Frontend URL for redirects         | `http://localhost:5174` |
+| `CLAUDE_API_KEY`       | Claude API key for AI features     | (optional)              |
 
 ### Helm Values
 
@@ -475,13 +477,13 @@ GitHub OAuth is **required** for authentication. Follow these steps carefully:
 ### Creating a GitHub OAuth App
 
 > **Important**: Create the OAuth App under a **GitHub organization** account, not a personal account.
-> When the app is owned by an organization, users will see "Authorize by *your-org*" in the consent
+> When the app is owned by an organization, users will see "Authorize by _your-org_" in the consent
 > dialog — clearly identifying it as an application. An app owned by a personal account shows
-> "by *username*", which looks like you are delegating access to a person rather than an application.
+> "by _username_", which looks like you are delegating access to a person rather than an application.
 
 1. Go to your **GitHub Organization** → **Settings** → **Developer settings** → **OAuth Apps** → **New OAuth App**
 
-   *(For personal development only, you can use **GitHub** → your personal **Settings** → **Developer settings** → **OAuth Apps**)*
+   _(For personal development only, you can use **GitHub** → your personal **Settings** → **Developer settings** → **OAuth Apps**)_
 
 2. Fill in the application details:
    - **Application name**: `KubeStellar Console` (or your preferred name)
@@ -496,12 +498,12 @@ GitHub OAuth is **required** for authentication. Follow these steps carefully:
 
 ### Callback URL Reference
 
-| Environment | Homepage URL | Callback URL |
-|-------------|--------------|--------------|
-| Local dev | `http://localhost:5174` | `http://localhost:8080/auth/github/callback` |
-| Docker | Your host URL | `http://your-host:8080/auth/github/callback` |
-| Kubernetes | Your ingress URL | `https://console.your-domain.com/auth/github/callback` |
-| OpenShift | Your route URL | `https://console-namespace.apps.cluster.com/auth/github/callback` |
+| Environment | Homepage URL            | Callback URL                                                      |
+| ----------- | ----------------------- | ----------------------------------------------------------------- |
+| Local dev   | `http://localhost:5174` | `http://localhost:8080/auth/github/callback`                      |
+| Docker      | Your host URL           | `http://your-host:8080/auth/github/callback`                      |
+| Kubernetes  | Your ingress URL        | `https://console.your-domain.com/auth/github/callback`            |
+| OpenShift   | Your route URL          | `https://console-namespace.apps.cluster.com/auth/github/callback` |
 
 ### Using with Helm
 
@@ -547,12 +549,15 @@ helm install kc kubestellar-console/kubestellar-console \
 **Cause**: The GitHub OAuth Client ID is not configured or not being read by the backend.
 
 **Solutions**:
+
 1. Verify environment variables are set:
+
    ```bash
    echo $GITHUB_CLIENT_ID  # Should show your client ID
    ```
 
 2. Pass environment variables inline when starting:
+
    ```bash
    GITHUB_CLIENT_ID=xxx GITHUB_CLIENT_SECRET=yyy ./console
    ```
@@ -566,6 +571,7 @@ helm install kc kubestellar-console/kubestellar-console \
 **Cause**: `DEV_MODE=true` bypasses OAuth and uses a mock user.
 
 **Solution**: Set `DEV_MODE=false` for real GitHub authentication:
+
 ```bash
 DEV_MODE=false GITHUB_CLIENT_ID=xxx GITHUB_CLIENT_SECRET=yyy ./console
 ```
@@ -575,6 +581,7 @@ DEV_MODE=false GITHUB_CLIENT_ID=xxx GITHUB_CLIENT_SECRET=yyy ./console
 **Symptom**: GitHub shows "The redirect_uri does not match" error.
 
 **Solution**: Ensure the callback URL in your GitHub OAuth App **exactly** matches:
+
 - Development: `http://localhost:8080/auth/github/callback`
 - Production: `https://your-domain.com/auth/github/callback`
 
@@ -587,6 +594,7 @@ DEV_MODE=false GITHUB_CLIENT_ID=xxx GITHUB_CLIENT_SECRET=yyy ./console
 **Cause**: `kubestellar-ops` or `kubestellar-deploy` plugins are not installed.
 
 **Solution**:
+
 ```bash
 # Option 1: Install from Claude Code Marketplace (recommended)
 claude plugins install kubestellar-ops
@@ -609,6 +617,7 @@ which kubestellar-ops kubestellar-deploy
 **Symptom**: Browser console shows CORS errors.
 
 **Solution**: Ensure `FRONTEND_URL` is correctly configured in your environment:
+
 ```bash
 FRONTEND_URL=http://localhost:5174 ./console
 ```
@@ -618,6 +627,7 @@ FRONTEND_URL=http://localhost:5174 ./console
 **Symptom**: "Failed to resolve import" or "Outdated Optimize Dep"
 
 **Solution**:
+
 ```bash
 cd web
 rm -rf node_modules/.vite
