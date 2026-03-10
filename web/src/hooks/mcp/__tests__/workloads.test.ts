@@ -65,7 +65,7 @@ vi.mock("../shared", () => ({
   REFRESH_INTERVAL_MS: 120000,
   MIN_REFRESH_INDICATOR_MS: 0,
   getEffectiveInterval: (value: number) => value,
-  LOCAL_AGENT_URL: "http://agent.local",
+  LOCAL_AGENT_URL: "http://localhost:8585",
   clusterCacheRef: mockClusterCacheRef,
 }));
 
@@ -340,7 +340,7 @@ describe("workload hooks", () => {
 
       await waitFor(() => expect(result.current.deployments).toHaveLength(1));
       expect(globalThis.fetch).toHaveBeenCalledWith(
-        "http://agent.local/deployments?cluster=alpha&namespace=apps",
+        "http://localhost:8585/deployments?cluster=alpha&namespace=apps",
         expect.objectContaining({ headers: { Accept: "application/json" } }),
       );
       expect(result.current.deployments[0]).toEqual(
@@ -570,12 +570,13 @@ describe("workload hooks", () => {
 
       await waitFor(() => expect(result.current.hpas).toHaveLength(1));
       expect(globalThis.fetch).toHaveBeenCalledWith(
-        "http://agent.local/hpas?cluster=alpha&namespace=apps",
+        "http://localhost:8585/hpas?cluster=alpha&namespace=apps",
         expect.objectContaining({ headers: { Accept: "application/json" } }),
       );
     });
 
     it("useHPAs returns an error state on failure", async () => {
+      mockIsAgentUnavailable.mockReturnValue(true);
       mockApiGet.mockRejectedValue(new Error("api down"));
       const { useHPAs } = await loadWorkloadsModule();
 
@@ -626,12 +627,13 @@ describe("workload hooks", () => {
 
       await waitFor(() => expect(result.current.replicasets).toHaveLength(1));
       expect(globalThis.fetch).toHaveBeenCalledWith(
-        "http://agent.local/replicasets?cluster=alpha&namespace=apps",
+        "http://localhost:8585/replicasets?cluster=alpha&namespace=apps",
         expect.objectContaining({ headers: { Accept: "application/json" } }),
       );
     });
 
     it("useReplicaSets returns an error state on failure", async () => {
+      mockIsAgentUnavailable.mockReturnValue(true);
       mockApiGet.mockRejectedValue(new Error("api down"));
       const { useReplicaSets } = await loadWorkloadsModule();
 
@@ -655,12 +657,13 @@ describe("workload hooks", () => {
 
       await waitFor(() => expect(result.current.statefulsets).toHaveLength(1));
       expect(globalThis.fetch).toHaveBeenCalledWith(
-        "http://agent.local/statefulsets?cluster=alpha&namespace=apps",
+        "http://localhost:8585/statefulsets?cluster=alpha&namespace=apps",
         expect.objectContaining({ headers: { Accept: "application/json" } }),
       );
     });
 
     it("useStatefulSets returns an error state on failure", async () => {
+      mockIsAgentUnavailable.mockReturnValue(true);
       mockApiGet.mockRejectedValue(new Error("api down"));
       const { useStatefulSets } = await loadWorkloadsModule();
 
@@ -684,12 +687,13 @@ describe("workload hooks", () => {
 
       await waitFor(() => expect(result.current.daemonsets).toHaveLength(1));
       expect(globalThis.fetch).toHaveBeenCalledWith(
-        "http://agent.local/daemonsets?cluster=alpha&namespace=apps",
+        "http://localhost:8585/daemonsets?cluster=alpha&namespace=apps",
         expect.objectContaining({ headers: { Accept: "application/json" } }),
       );
     });
 
     it("useDaemonSets returns an error state on failure", async () => {
+      mockIsAgentUnavailable.mockReturnValue(true);
       mockApiGet.mockRejectedValue(new Error("api down"));
       const { useDaemonSets } = await loadWorkloadsModule();
 
@@ -713,12 +717,13 @@ describe("workload hooks", () => {
 
       await waitFor(() => expect(result.current.cronjobs).toHaveLength(1));
       expect(globalThis.fetch).toHaveBeenCalledWith(
-        "http://agent.local/cronjobs?cluster=alpha&namespace=apps",
+        "http://localhost:8585/cronjobs?cluster=alpha&namespace=apps",
         expect.objectContaining({ headers: { Accept: "application/json" } }),
       );
     });
 
     it("useCronJobs returns an error state on failure", async () => {
+      mockIsAgentUnavailable.mockReturnValue(true);
       mockApiGet.mockRejectedValue(new Error("api down"));
       const { useCronJobs } = await loadWorkloadsModule();
 
