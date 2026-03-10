@@ -162,7 +162,7 @@ fi
 
 # Start backend
 echo "Starting backend..."
-go run ./cmd/console/main.go --dev &
+go run ./cmd/console/ --dev &
 BACKEND_PID=$!
 sleep 2
 
