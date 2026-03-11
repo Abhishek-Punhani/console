@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
+import { STORAGE_KEY_TOKEN } from "../../../lib/constants";
 
 const mockApiGet = vi.hoisted(() => vi.fn());
 const mockFetchSSE = vi.hoisted(() => vi.fn());
@@ -381,7 +382,7 @@ describe("workload hooks", () => {
       mockKubectlProxy.getDeployments.mockRejectedValue(
         new Error("proxy down"),
       );
-      localStorage.setItem("token", "test-token");
+      localStorage.setItem(STORAGE_KEY_TOKEN, "test-token");
       const { useDeployments } = await loadWorkloadsModule();
 
       const { result } = renderHook(() => useDeployments("alpha", "apps"));
