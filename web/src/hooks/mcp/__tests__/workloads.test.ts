@@ -30,6 +30,10 @@ vi.mock("../../../lib/api", () => ({
   isBackendUnavailable: mockIsBackendUnavailable,
 }));
 
+vi.mock("../../../lib/constants/network", () => ({
+  MCP_HOOK_TIMEOUT_MS: 5_000,
+}));
+
 vi.mock("../../../lib/sseClient", () => ({
   fetchSSE: mockFetchSSE,
 }));
@@ -400,6 +404,24 @@ describe("workload hooks", () => {
       expect(result.current.deployments[0].name).toBe("rest-deploy");
     });
 
+    it("returns an error when all deployment fetch tiers fail", async () => {
+      (globalThis.fetch as ReturnType<typeof vi.fn>)
+        .mockRejectedValueOnce(new Error("agent down"))
+        .mockRejectedValueOnce(new Error("rest down"));
+      mockClusterCacheRef.clusters = [{ name: "alpha", context: "ctx-alpha" }];
+      mockKubectlProxy.getDeployments.mockRejectedValue(
+        new Error("proxy down"),
+      );
+      const { useDeployments } = await loadWorkloadsModule();
+
+      const { result } = renderHook(() => useDeployments("alpha", "apps"));
+
+      await waitFor(() =>
+        expect(result.current.error).toBe("Failed to fetch deployments"),
+      );
+      expect(result.current.deployments).toEqual([]);
+    });
+
     it("refetch re-triggers fetching", async () => {
       (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue(
         makeFetchResponse({
@@ -581,7 +603,7 @@ describe("workload hooks", () => {
       mockApiGet.mockRejectedValue(new Error("api down"));
       const { useHPAs } = await loadWorkloadsModule();
 
-      const { result } = renderHook(() => useHPAs());
+      const { result } = renderHook(() => useHPAs("alpha", "apps"));
 
       await waitFor(() =>
         expect(result.current.error).toBe("Failed to fetch HPAs"),
@@ -593,12 +615,13 @@ describe("workload hooks", () => {
       mockFetchSSE.mockResolvedValue([{ name: "job-a", namespace: "apps" }]);
       const { useJobs } = await loadWorkloadsModule();
 
-      const { result } = renderHook(() => useJobs());
+      const { result } = renderHook(() => useJobs("alpha", "apps"));
 
       await waitFor(() => expect(result.current.jobs).toHaveLength(1));
       expect(mockFetchSSE).toHaveBeenCalledWith(
         expect.objectContaining({
           url: "/api/mcp/jobs/stream",
+          params: { cluster: "alpha", namespace: "apps" },
           itemsKey: "jobs",
         }),
       );
@@ -638,7 +661,7 @@ describe("workload hooks", () => {
       mockApiGet.mockRejectedValue(new Error("api down"));
       const { useReplicaSets } = await loadWorkloadsModule();
 
-      const { result } = renderHook(() => useReplicaSets());
+      const { result } = renderHook(() => useReplicaSets("alpha", "apps"));
 
       await waitFor(() =>
         expect(result.current.error).toBe("Failed to fetch ReplicaSets"),
@@ -668,7 +691,7 @@ describe("workload hooks", () => {
       mockApiGet.mockRejectedValue(new Error("api down"));
       const { useStatefulSets } = await loadWorkloadsModule();
 
-      const { result } = renderHook(() => useStatefulSets());
+      const { result } = renderHook(() => useStatefulSets("alpha", "apps"));
 
       await waitFor(() =>
         expect(result.current.error).toBe("Failed to fetch StatefulSets"),
@@ -698,7 +721,7 @@ describe("workload hooks", () => {
       mockApiGet.mockRejectedValue(new Error("api down"));
       const { useDaemonSets } = await loadWorkloadsModule();
 
-      const { result } = renderHook(() => useDaemonSets());
+      const { result } = renderHook(() => useDaemonSets("alpha", "apps"));
 
       await waitFor(() =>
         expect(result.current.error).toBe("Failed to fetch DaemonSets"),
@@ -728,7 +751,7 @@ describe("workload hooks", () => {
       mockApiGet.mockRejectedValue(new Error("api down"));
       const { useCronJobs } = await loadWorkloadsModule();
 
-      const { result } = renderHook(() => useCronJobs());
+      const { result } = renderHook(() => useCronJobs("alpha", "apps"));
 
       await waitFor(() =>
         expect(result.current.error).toBe("Failed to fetch CronJobs"),
