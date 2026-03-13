@@ -9,6 +9,8 @@ const mockIsAgentUnavailable = vi.hoisted(() => vi.fn(() => false));
 const mockIsDemoMode = vi.hoisted(() => vi.fn(() => false));
 const mockIsBackendUnavailable = vi.hoisted(() => vi.fn(() => false));
 const mockRegisterRefetch = vi.hoisted(() => vi.fn());
+const MOCK_REFRESH_INTERVAL_MS = 120_000;
+
 const cacheResetHandlers = vi.hoisted(
   () => new Map<string, () => void | Promise<void>>(),
 );
@@ -67,7 +69,7 @@ vi.mock("../../../lib/kubectlProxy", () => ({
 }));
 
 vi.mock("../shared", () => ({
-  REFRESH_INTERVAL_MS: 120000,
+  REFRESH_INTERVAL_MS: MOCK_REFRESH_INTERVAL_MS,
   MIN_REFRESH_INDICATOR_MS: 0,
   getEffectiveInterval: (value: number) => value,
   LOCAL_AGENT_URL: "http://localhost:8585",
@@ -305,7 +307,7 @@ describe("workload hooks", () => {
       expect(mockFetchSSE).toHaveBeenCalledTimes(1);
 
       await act(async () => {
-        vi.advanceTimersByTime(120000);
+        vi.advanceTimersByTime(MOCK_REFRESH_INTERVAL_MS);
       });
       await flushMicrotasks();
       expect(mockFetchSSE).toHaveBeenCalledTimes(2);
@@ -313,7 +315,7 @@ describe("workload hooks", () => {
       unmount();
 
       await act(async () => {
-        vi.advanceTimersByTime(120000);
+        vi.advanceTimersByTime(MOCK_REFRESH_INTERVAL_MS);
       });
       await flushMicrotasks();
       expect(mockFetchSSE).toHaveBeenCalledTimes(2);
