@@ -41,11 +41,11 @@ const VIEWBOX_HEIGHT = 160
 // Node Position Constants (viewBox units)
 // ============================================================================
 
-/** Outer tenant boundary (dashed) */
+/** Outer tenant boundary (dashed) — y pushed up to fit "Tenant 1" label above L2 UDN */
 const TENANT_X = 3
-const TENANT_Y = 12
+const TENANT_Y = 4
 const TENANT_W = 185
-const TENANT_H = 145
+const TENANT_H = 153
 
 /** Layer-2 Cluster UDN (Secondary) — top zone inside tenant */
 const L2_UDN_X = 20
@@ -194,8 +194,8 @@ const L3_UDN_CONNECTION_COLOR = '#60a5fa'
 const KUBEFLEX_FILL = 'rgba(20, 80, 120, 0.9)'
 const KUBEFLEX_STROKE = 'rgba(59, 130, 246, 0.6)'
 
-/** Default K8s network — dark blue theme (matches Braulio's diagram) */
-const DEFAULT_NET_CONNECTION_COLOR = '#1e4a6e'
+/** Default K8s network — medium blue theme (bright enough to read throughput labels) */
+const DEFAULT_NET_CONNECTION_COLOR = '#4a90c4'
 
 /** Component node fill */
 const NODE_FILL = 'rgba(30, 41, 59, 0.8)'
@@ -338,6 +338,9 @@ function buildConnections(
   const k3sLeftX = K3S_X
   const k3sLeftY = K3S_Y + K3S_H / 2
 
+  /** Waypoint X for routing K3s eth1 connection around the pod (midpoint of gap between namespaces) */
+  const K3S_ETH1_ROUTE_X = (NS1_X + NS1_W + NS2_X) / 2
+
   /** K3s Server eth0 top-right (-> Default k8s Network -> KubeFlex) */
   const k3sTopX = K3S_X + K3S_W - 10
   const k3sTopY = K3S_Y
@@ -351,6 +354,9 @@ function buildConnections(
   /** KubeFlex bottom center */
   const kfBotCx = KUBEFLEX_X + KUBEFLEX_W / 2
   const kfBotY = KUBEFLEX_Y + KUBEFLEX_H
+
+  /** Midpoint Y for the vertical segment of the KubeFlex connection (between KubeFlex bottom and K3s top) */
+  const KF_MID_Y = (kfBotY + k3sTopY) / 2
 
   /** Half the throughput for each agent pod (split equally) */
   const AGENT_THROUGHPUT_SPLIT = 2
@@ -423,33 +429,35 @@ function buildConnections(
     },
     {
       // K3s Server eth1 -> L2 UDN (green, bidirectional)
+      // Route LEFT from the pod to the gap between namespaces, then UP to the UDN
+      // to avoid the connection cutting through the K3s Server Pod
       id: 'k3s-eth1-l2',
-      d: `M ${k3sLeftX} ${k3sLeftY} L ${L2_UDN_X + L2_UDN_W - 5} ${k3sLeftY} L ${L2_UDN_X + L2_UDN_W - 5} ${l2BottomY}`,
+      d: `M ${k3sLeftX} ${k3sLeftY} L ${K3S_ETH1_ROUTE_X} ${k3sLeftY} L ${K3S_ETH1_ROUTE_X} ${l2BottomY}`,
       color: L2_UDN_CONNECTION_COLOR,
       active: k3sDetected && ovnDetected,
       label: 'eth1',
       throughputBytesPerSec: rates.k3sEth1Rate,
       rxBytesPerSec: rates.k3sEth1Rx,
       txBytesPerSec: rates.k3sEth1Tx,
-      rxLabelX: k3sLeftX - THROUGHPUT_PILL_FULL_W - 2,
+      rxLabelX: k3sLeftX - THROUGHPUT_PILL_FULL_W - 1,
       rxLabelY: k3sLeftY - 5,
-      txLabelX: k3sLeftX - THROUGHPUT_PILL_FULL_W - 2,
+      txLabelX: k3sLeftX - THROUGHPUT_PILL_FULL_W - 1,
       txLabelY: k3sLeftY + 1,
     },
     {
       // K3s Server eth0 -> Default k8s Network -> KubeFlex (dark blue, bidirectional)
       id: 'k3s-eth0-kf',
-      d: `M ${k3sTopX} ${k3sTopY} L ${k3sTopX} ${kfBotY + 15} L ${kfBotCx} ${kfBotY + 15} L ${kfBotCx} ${kfBotY}`,
+      d: `M ${k3sTopX} ${k3sTopY} L ${kfBotCx} ${k3sTopY} L ${kfBotCx} ${kfBotY}`,
       color: DEFAULT_NET_CONNECTION_COLOR,
       active: k3sDetected && kubeflexDetected,
       label: 'eth0',
       throughputBytesPerSec: rates.k3sEth0Rate,
       rxBytesPerSec: rates.k3sEth0Rx,
       txBytesPerSec: rates.k3sEth0Tx,
-      rxLabelX: k3sTopX + 2,
-      rxLabelY: kfBotY + 12,
+      rxLabelX: kfBotCx + 3,
+      rxLabelY: KF_MID_Y - 3,
       txLabelX: kfBotCx + 3,
-      txLabelY: kfBotY + 12,
+      txLabelY: KF_MID_Y + 2,
     },
   ]
 }
@@ -1104,8 +1112,8 @@ export function TenantTopology() {
           {/* eth1 badge at left side */}
           <InterfaceBadge x={K3S_X + 2} y={K3S_Y + K3S_H / 2 - BADGE_H / 2} label="eth1" isEth1 />
           <text
-            x={K3S_X + K3S_W / 2}
-            y={K3S_Y + 20}
+            x={K3S_X + K3S_W / 2 + 4}
+            y={K3S_Y + 26}
             textAnchor="middle"
             fill={data.k3sDetected ? TEXT_PRIMARY : TEXT_MUTED}
             fontSize={FONT_SIZE_TITLE}
