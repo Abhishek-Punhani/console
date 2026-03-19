@@ -152,7 +152,10 @@ export function KubevirtStatus() {
       {/* Health badge + last check */}
       <div className="flex items-center justify-between">
         <div
+          role="button"
+          tabIndex={0}
           onClick={() => setIsDetailModalOpen(true)}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setIsDetailModalOpen(true) } }}
           className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium cursor-pointer hover:bg-secondary/50 transition-colors ${
             isHealthy
               ? 'bg-green-500/15 text-green-400'
@@ -174,7 +177,7 @@ export function KubevirtStatus() {
       </div>
 
       {/* Top metrics: infra pods */}
-      <div className="flex gap-3 cursor-pointer hover:bg-secondary/50 transition-colors rounded-lg" onClick={() => setIsDetailModalOpen(true)}>
+      <div className="flex gap-3 cursor-pointer hover:bg-secondary/50 transition-colors rounded-lg" role="button" tabIndex={0} onClick={() => setIsDetailModalOpen(true)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setIsDetailModalOpen(true) } }}>
         <MetricTile
           label={t('kubevirtStatus.infraPods')}
           value={data.podCount}
@@ -196,7 +199,7 @@ export function KubevirtStatus() {
       </div>
 
       {/* Bottom metrics: VM state breakdown */}
-      <div className="flex gap-3 cursor-pointer hover:bg-secondary/50 transition-colors rounded-lg" onClick={() => setIsDetailModalOpen(true)}>
+      <div className="flex gap-3 cursor-pointer hover:bg-secondary/50 transition-colors rounded-lg" role="button" tabIndex={0} onClick={() => setIsDetailModalOpen(true)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setIsDetailModalOpen(true) } }}>
         <MetricTile
           label={t('kubevirtStatus.runningVMs')}
           value={runningVMs}
@@ -225,7 +228,7 @@ export function KubevirtStatus() {
           <p className="text-xs font-medium text-muted-foreground">{t('kubevirtStatus.vmList')}</p>
           <div className="space-y-1.5 max-h-40 overflow-y-auto scrollbar-thin">
             {vms.map((vm) => (
-              <div key={`${vm.namespace}/${vm.name}`} className="flex items-center justify-between text-xs gap-2 px-2 py-1.5 rounded bg-secondary/30 cursor-pointer hover:bg-secondary/50 transition-colors" onClick={() => setIsDetailModalOpen(true)}>
+              <div key={`${vm.namespace}/${vm.name}`} className="flex items-center justify-between text-xs gap-2 px-2 py-1.5 rounded bg-secondary/30 cursor-pointer hover:bg-secondary/50 transition-colors" role="button" tabIndex={0} onClick={() => setIsDetailModalOpen(true)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setIsDetailModalOpen(true) } }}>
                 <div className="flex flex-col min-w-0 flex-1">
                   <span className="text-foreground truncate" title={vm.name}>
                     {vm.name}
