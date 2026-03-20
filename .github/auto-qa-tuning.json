@@ -1,28 +1,28 @@
 {
   "schema_version": 1,
-  "last_updated": "2026-03-19T03:51:38Z",
+  "last_updated": "2026-03-20T03:47:12Z",
   "rolling_window_days": 30,
   "categories": {
     "other": {
-      "merged": 64,
-      "closed": 75,
-      "acceptance_rate": 0.46,
+      "merged": 66,
+      "closed": 80,
+      "acceptance_rate": 0.45,
       "status": "normal",
-      "last_evaluated": "2026-03-19T03:51:38Z"
+      "last_evaluated": "2026-03-20T03:47:12Z"
     },
     "security": {
-      "merged": 12,
+      "merged": 13,
       "closed": 14,
-      "acceptance_rate": 0.46,
+      "acceptance_rate": 0.48,
       "status": "normal",
-      "last_evaluated": "2026-03-17T03:47:54Z"
+      "last_evaluated": "2026-03-20T03:47:12Z"
     },
     "resilience": {
-      "merged": 15,
+      "merged": 16,
       "closed": 24,
-      "acceptance_rate": 0.38,
+      "acceptance_rate": 0.4,
       "status": "normal",
-      "last_evaluated": "2026-03-19T03:51:38Z"
+      "last_evaluated": "2026-03-20T03:47:12Z"
     },
     "performance": {
       "merged": 5,
@@ -46,18 +46,18 @@
       "last_evaluated": "2026-03-17T03:47:54Z"
     },
     "a11y": {
-      "merged": 14,
+      "merged": 15,
       "closed": 12,
-      "acceptance_rate": 0.54,
+      "acceptance_rate": 0.56,
       "status": "normal",
-      "last_evaluated": "2026-03-18T03:51:40Z"
+      "last_evaluated": "2026-03-20T03:47:12Z"
     },
     "ui-design": {
-      "merged": 3,
-      "closed": 9,
-      "acceptance_rate": 0.25,
+      "merged": 4,
+      "closed": 10,
+      "acceptance_rate": 0.29,
       "status": "normal",
-      "last_evaluated": "2026-03-17T03:47:54Z"
+      "last_evaluated": "2026-03-20T03:47:12Z"
     },
     "testing": {
       "merged": 11,
@@ -299,17 +299,24 @@
       "total_closed": 160,
       "categories_blocked": [],
       "categories_boosted": []
+    },
+    {
+      "date": "2026-03-20",
+      "total_merged": 146,
+      "total_closed": 166,
+      "categories_blocked": [],
+      "categories_boosted": []
     }
   ],
   "rotation_weights": {
-    "other": 0.69,
-    "security": 0.69,
-    "resilience": 0.57,
+    "other": 0.68,
+    "security": 0.72,
+    "resilience": 0.6,
     "performance": 1.07,
     "consistency": 0.78,
     "dom-errors": 1.01,
-    "a11y": 0.81,
-    "ui-design": 0.38,
+    "a11y": 0.84,
+    "ui-design": 0.43,
     "testing": 0.75
   },
   "max_issues_override": 2,
