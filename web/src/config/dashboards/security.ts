@@ -95,7 +95,7 @@ export const securityDashboardConfig: UnifiedDashboardConfig = {
     addCard: true,
   },
 
-  storageKey: 'kubestellar-unified-security-dashboard',
+  storageKey: 'kubestellar-unified-security-dashboard-v2',
 }
 
 export default securityDashboardConfig

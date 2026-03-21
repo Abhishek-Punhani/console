@@ -1,354 +1,330 @@
 /**
  * ISO 27001 Security Audit Card
  *
- * Interactive checklist of 70 Kubernetes security controls mapped to ISO 27001.
- * Checklist state persists in localStorage so auditors can track progress.
- * Based on real-world audit experience (5 ISO 27001 audits) combined with the
- * official Kubernetes security checklist.
+ * Runs automated compliance checks against connected clusters via kc-agent.
+ * Falls back to demo data when agent is unavailable.
+ * 70 controls across 14 categories mapped to ISO 27001.
  */
 
-import { useState, useMemo, useCallback } from 'react'
-import { Shield, ChevronDown, ChevronRight, Terminal, CheckCircle2, Circle, AlertTriangle } from 'lucide-react'
-import { useCardLoadingState } from './CardDataContext'
+import { useMemo } from 'react'
+import { Shield, CheckCircle2, XCircle, AlertTriangle, MinusCircle, Terminal, ChevronDown, ChevronRight } from 'lucide-react'
+import { useCachedISO27001Audit, type ISO27001Finding } from '../../hooks/useCachedData'
+import { useCardLoadingState, useCardDemoState } from './CardDataContext'
+import { useCardData } from '../../lib/cards/cardHooks'
+import { CardClusterFilter, CardSearchInput, CardSkeleton } from '../../lib/cards/CardComponents'
+import { CardControls } from '../ui/CardControls'
+import { Pagination } from '../ui/Pagination'
+import { useState, useCallback } from 'react'
 
-const STORAGE_KEY = 'ksc-iso27001-audit-checks'
+// ── Demo Data ──────────────────────────────────────────────────────
 
-interface AuditCheck {
-  id: string
-  label: string
+function getDemoFindings(): ISO27001Finding[] {
+  const clusters = ['eks-prod-us-east-1', 'gke-staging', 'aks-dev-westeu']
+  const findings: ISO27001Finding[] = []
+
+  for (const cluster of clusters) {
+    findings.push(
+      { checkId: 'rbac-1', category: 'RBAC & Access Control', label: 'No cluster-admin bindings outside kube-system', status: 'fail', cluster, severity: 'critical', details: 'Found 3 cluster-admin bindings in default namespace' },
+      { checkId: 'rbac-2', category: 'RBAC & Access Control', label: 'ServiceAccounts use least-privilege Roles', status: 'pass', cluster, severity: 'high', details: 'All service accounts scoped to namespace roles' },
+      { checkId: 'rbac-3', category: 'RBAC & Access Control', label: 'No wildcard permissions (*) in production', status: 'fail', cluster, severity: 'critical', details: '2 roles with wildcard verbs detected' },
+      { checkId: 'net-1', category: 'Network Policies', label: 'Default-deny ingress in all namespaces', status: 'fail', cluster, severity: 'high', details: '5 namespaces missing default-deny ingress policy' },
+      { checkId: 'net-2', category: 'Network Policies', label: 'Default-deny egress policy', status: 'fail', cluster, severity: 'high', details: '8 namespaces missing default-deny egress policy' },
+      { checkId: 'sec-1', category: 'Secrets Management', label: 'etcd encryption enabled (KMS)', status: 'pass', cluster, severity: 'critical', details: 'KMS encryption provider configured' },
+      { checkId: 'sec-2', category: 'Secrets Management', label: 'No secrets in ConfigMaps or env vars', status: 'warning', cluster, severity: 'high', details: 'Found 1 suspicious ConfigMap with base64-encoded data' },
+      { checkId: 'pod-1', category: 'Pod Security', label: 'Pod Security Standards enforced (restricted)', status: 'pass', cluster, severity: 'high', details: 'PSS restricted level enforced via admission controller' },
+      { checkId: 'pod-2', category: 'Pod Security', label: 'No privileged containers', status: 'fail', cluster, severity: 'critical', details: '2 pods running with privileged: true' },
+      { checkId: 'pod-3', category: 'Pod Security', label: 'runAsNonRoot enforced', status: 'fail', cluster, severity: 'high', details: '12 pods missing runAsNonRoot' },
+      { checkId: 'pod-4', category: 'Pod Security', label: 'Read-only root filesystem', status: 'warning', cluster, severity: 'medium', details: '8 pods without readOnlyRootFilesystem' },
+      { checkId: 'pod-5', category: 'Pod Security', label: 'No hostPath volumes', status: 'pass', cluster, severity: 'high', details: 'No hostPath volumes detected' },
+      { checkId: 'img-1', category: 'Image Security', label: 'Images from trusted registries only', status: 'warning', cluster, severity: 'high', details: '3 images from docker.io (not private registry)' },
+      { checkId: 'img-4', category: 'Image Security', label: 'No latest tag in production', status: 'fail', cluster, severity: 'medium', details: '4 containers using :latest tag' },
+      { checkId: 'log-1', category: 'Logging & Auditing', label: 'Kubernetes audit logging enabled', status: 'pass', cluster, severity: 'high', details: 'Audit policy configured with RequestResponse level' },
+      { checkId: 'adm-1', category: 'Admission Controllers', label: 'PodSecurity admission controller enabled', status: 'pass', cluster, severity: 'high', details: 'PodSecurity admission controller active' },
+      { checkId: 'cfg-1', category: 'Cluster Configuration', label: 'Kubernetes version supported and up to date', status: 'pass', cluster, severity: 'medium', details: 'Running v1.29.2 (supported)' },
+      { checkId: 'cfg-4', category: 'Cluster Configuration', label: 'Cloud metadata API access filtered', status: 'fail', cluster, severity: 'high', details: 'No NetworkPolicy blocking 169.254.169.254' },
+    )
+  }
+  return findings
 }
 
-interface AuditCategory {
-  name: string
-  checks: AuditCheck[]
-  verify?: string
+// ── Verify commands for categories ─────────────────────────────────
+
+const VERIFY_COMMANDS: Record<string, string> = {
+  'RBAC & Access Control': 'kubectl get clusterrolebindings -o json | jq \'.items[] | select(.roleRef.name=="cluster-admin")\'',
+  'Network Policies': 'kubectl get networkpolicies -A',
+  'Secrets Management': 'kubectl get secrets -A -o json | jq -r \'.items[].metadata.name\'',
+  'Pod Security': 'kubectl get pods -A -o json | jq \'.items[] | select(.spec.securityContext.runAsNonRoot==null)\'',
+  'Image Security': 'kubectl get pods -A -o jsonpath=\'{range .items[*]}{.spec.containers[*].image}{"\\n"}{end}\' | sort -u',
+  'Cluster Configuration': 'kubectl version --short',
 }
 
-const AUDIT_CATEGORIES: AuditCategory[] = [
-  {
-    name: 'RBAC & Access Control',
-    verify: 'kubectl get clusterrolebindings -o json | jq \'.items[] | select(.roleRef.name=="cluster-admin")\'',
-    checks: [
-      { id: 'rbac-1', label: 'No cluster-admin bindings outside kube-system' },
-      { id: 'rbac-2', label: 'ServiceAccounts use least-privilege Roles (not ClusterRoles)' },
-      { id: 'rbac-3', label: 'No wildcard permissions (*) in production namespaces' },
-      { id: 'rbac-4', label: 'RBAC audit log enabled (who can do what)' },
-      { id: 'rbac-5', label: 'External auth (OIDC/SAML) for human users' },
-    ],
-  },
-  {
-    name: 'Network Policies',
-    verify: 'kubectl get networkpolicies -A',
-    checks: [
-      { id: 'net-1', label: 'Default-deny ingress policy in all namespaces' },
-      { id: 'net-2', label: 'Default-deny egress policy' },
-      { id: 'net-3', label: 'Inter-namespace traffic explicitly allowed (no implicit trust)' },
-      { id: 'net-4', label: 'External traffic whitelisted by IP/CIDR' },
-      { id: 'net-5', label: 'CNI plugin supports NetworkPolicy enforcement' },
-    ],
-  },
-  {
-    name: 'Secrets Management',
-    verify: 'kubectl get secrets -A -o json | jq -r \'.items[].metadata.name\'',
-    checks: [
-      { id: 'sec-1', label: 'etcd encryption enabled (KMS provider)' },
-      { id: 'sec-2', label: 'No secrets in ConfigMaps or env vars' },
-      { id: 'sec-3', label: 'External Secrets Operator (AWS SM, Vault, etc.)' },
-      { id: 'sec-4', label: 'Secret rotation policy documented and enforced' },
-      { id: 'sec-5', label: 'RBAC restricts secret access to required ServiceAccounts only' },
-    ],
-  },
-  {
-    name: 'Pod Security',
-    verify: 'kubectl get pods -A -o json | jq \'.items[] | select(.spec.securityContext.runAsNonRoot==null)\'',
-    checks: [
-      { id: 'pod-1', label: 'Pod Security Standards enforced (restricted level)' },
-      { id: 'pod-2', label: 'No privileged containers' },
-      { id: 'pod-3', label: 'runAsNonRoot enforced' },
-      { id: 'pod-4', label: 'Read-only root filesystem' },
-      { id: 'pod-5', label: 'No hostPath volumes' },
-    ],
-  },
-  {
-    name: 'Authentication & Authorization',
-    checks: [
-      { id: 'auth-1', label: 'system:masters group not used after bootstrapping' },
-      { id: 'auth-2', label: 'kube-controller-manager uses --use-service-account-credentials' },
-      { id: 'auth-3', label: 'Root CA protected (offline CA or managed with access controls)' },
-      { id: 'auth-4', label: 'Certificate expiry no more than 3 years' },
-      { id: 'auth-5', label: 'Periodic access review process (at least every 24 months)' },
-    ],
-  },
-  {
-    name: 'Logging & Auditing',
-    checks: [
-      { id: 'log-1', label: 'Kubernetes audit logging enabled with appropriate policy' },
-      { id: 'log-2', label: 'Audit logs shipped to external SIEM/log aggregator' },
-      { id: 'log-3', label: 'Log retention meets compliance requirements (90+ days)' },
-      { id: 'log-4', label: 'Audit logs cover authentication, authorization, and mutations' },
-      { id: 'log-5', label: 'Log integrity protection (immutable storage or signing)' },
-    ],
-  },
-  {
-    name: 'Image Security',
-    verify: 'kubectl get pods -A -o jsonpath=\'{range .items[*]}{.spec.containers[*].image}{"\\n"}{end}\' | sort -u',
-    checks: [
-      { id: 'img-1', label: 'Images pulled from trusted registries only' },
-      { id: 'img-2', label: 'Image tags are immutable (digest-based or signed)' },
-      { id: 'img-3', label: 'Container image scanning in CI/CD pipeline' },
-      { id: 'img-4', label: 'No latest tag in production workloads' },
-      { id: 'img-5', label: 'Image pull policy set to Always or IfNotPresent (not Never)' },
-    ],
-  },
-  {
-    name: 'Admission Controllers',
-    checks: [
-      { id: 'adm-1', label: 'PodSecurity admission controller enabled' },
-      { id: 'adm-2', label: 'ValidatingAdmissionWebhooks configured for policy enforcement' },
-      { id: 'adm-3', label: 'MutatingAdmissionWebhooks reviewed and documented' },
-      { id: 'adm-4', label: 'ImagePolicyWebhook or equivalent for image verification' },
-      { id: 'adm-5', label: 'Admission controller failure policy set to Fail (not Ignore)' },
-    ],
-  },
-  {
-    name: 'etcd Security',
-    verify: 'kubectl get pods -n kube-system -l component=etcd -o yaml | grep -E "peer-cert|client-cert"',
-    checks: [
-      { id: 'etcd-1', label: 'etcd communication encrypted with TLS (peer and client)' },
-      { id: 'etcd-2', label: 'etcd access restricted to API server only' },
-      { id: 'etcd-3', label: 'etcd data-at-rest encryption configured' },
-      { id: 'etcd-4', label: 'etcd backup schedule documented and tested' },
-      { id: 'etcd-5', label: 'etcd not exposed on public network interfaces' },
-    ],
-  },
-  {
-    name: 'Node Security',
-    checks: [
-      { id: 'node-1', label: 'Node OS minimal and hardened (CIS benchmark)' },
-      { id: 'node-2', label: 'Kubelet authentication and authorization enabled' },
-      { id: 'node-3', label: 'Kubelet read-only port disabled (--read-only-port=0)' },
-      { id: 'node-4', label: 'Node auto-update or patching strategy documented' },
-      { id: 'node-5', label: 'AppArmor or SELinux enabled on nodes' },
-    ],
-  },
-  {
-    name: 'Supply Chain Security',
-    checks: [
-      { id: 'sc-1', label: 'SBOM generated for all deployed images' },
-      { id: 'sc-2', label: 'Image signatures verified before deployment (cosign/Notary)' },
-      { id: 'sc-3', label: 'Third-party dependencies scanned for vulnerabilities' },
-      { id: 'sc-4', label: 'Helm charts and manifests from verified sources' },
-      { id: 'sc-5', label: 'Build provenance tracked (SLSA level 2+)' },
-    ],
-  },
-  {
-    name: 'Incident Response',
-    checks: [
-      { id: 'ir-1', label: 'Incident response plan documented and reviewed' },
-      { id: 'ir-2', label: 'Runbooks for common Kubernetes security incidents' },
-      { id: 'ir-3', label: 'Alerting configured for security-critical events' },
-      { id: 'ir-4', label: 'Post-incident review process defined' },
-      { id: 'ir-5', label: 'Contact escalation matrix maintained and current' },
-    ],
-  },
-  {
-    name: 'Data Protection & Encryption',
-    checks: [
-      { id: 'dp-1', label: 'TLS termination for all ingress traffic' },
-      { id: 'dp-2', label: 'Service mesh mTLS for east-west traffic' },
-      { id: 'dp-3', label: 'Persistent volumes encrypted at rest' },
-      { id: 'dp-4', label: 'Backup encryption enabled' },
-      { id: 'dp-5', label: 'Data classification labels applied to namespaces' },
-    ],
-  },
-  {
-    name: 'Cluster Configuration',
-    checks: [
-      { id: 'cfg-1', label: 'Kubernetes version is supported and up to date' },
-      { id: 'cfg-2', label: 'API server access restricted (private endpoint or IP allowlist)' },
-      { id: 'cfg-3', label: 'Resource quotas and LimitRanges set per namespace' },
-      { id: 'cfg-4', label: 'Cloud metadata API access filtered from workloads' },
-      { id: 'cfg-5', label: 'LoadBalancer and ExternalIPs usage restricted' },
-    ],
-  },
+// ── Sort options ───────────────────────────────────────────────────
+
+type SortField = 'severity' | 'category' | 'status' | 'cluster'
+
+const SORT_OPTIONS = [
+  { value: 'severity' as const, label: 'Severity' },
+  { value: 'category' as const, label: 'Category' },
+  { value: 'status' as const, label: 'Status' },
+  { value: 'cluster' as const, label: 'Cluster' },
 ]
 
-const TOTAL_CHECKS = AUDIT_CATEGORIES.reduce((sum, cat) => sum + cat.checks.length, 0)
+const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 }
+const STATUS_ORDER: Record<string, number> = { fail: 0, warning: 1, pass: 2, manual: 3 }
 
-function loadCheckedState(): Set<string> {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    if (stored) return new Set(JSON.parse(stored))
-  } catch { /* ignore */ }
-  return new Set()
+// ── Status icon helper ─────────────────────────────────────────────
+
+function StatusIcon({ status }: { status: string }) {
+  switch (status) {
+    case 'pass': return <CheckCircle2 className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />
+    case 'fail': return <XCircle className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+    case 'warning': return <AlertTriangle className="w-3.5 h-3.5 text-yellow-400 flex-shrink-0" />
+    default: return <MinusCircle className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+  }
 }
 
-function saveCheckedState(checked: Set<string>) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify([...checked]))
-}
+// ── Main Component ─────────────────────────────────────────────────
 
 interface ISO27001AuditProps {
   config?: Record<string, unknown>
 }
 
-export function ISO27001Audit(_props: ISO27001AuditProps) {
-  useCardLoadingState({ isLoading: false, hasAnyData: true, isDemoData: true })
+export function ISO27001Audit({ config }: ISO27001AuditProps) {
+  const clusterConfig = config?.cluster as string | undefined
 
-  const [checked, setChecked] = useState<Set<string>>(loadCheckedState)
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
-  const [showVerify, setShowVerify] = useState<Set<string>>(new Set())
+  // 1. Demo mode detection
+  const { shouldUseDemoData: isDemoMode } = useCardDemoState({ requires: 'agent' })
 
-  const toggleCheck = useCallback((id: string) => {
-    setChecked(prev => {
+  // 2. Fetch live data from agent (runs kubectl checks against clusters)
+  const {
+    findings: cachedFindings,
+    isLoading: cachedLoading,
+    isDemoFallback,
+    isFailed: cachedFailed,
+    consecutiveFailures: cachedFailures,
+  } = useCachedISO27001Audit(clusterConfig)
+
+  // 3. Switch between demo and live data
+  const rawFindings = useMemo(
+    () => isDemoMode ? getDemoFindings() : cachedFindings,
+    [isDemoMode, cachedFindings]
+  )
+  const isLoading = isDemoMode ? false : cachedLoading
+  const isFailed = isDemoMode ? false : cachedFailed
+  const consecutiveFailures = isDemoMode ? 0 : cachedFailures
+
+  // 4. Report card state
+  const { showSkeleton, showEmptyState } = useCardLoadingState({
+    isLoading,
+    isDemoData: isDemoMode || isDemoFallback,
+    hasAnyData: rawFindings.length > 0,
+    isFailed,
+    consecutiveFailures,
+  })
+
+  // 5. Unified card controls
+  const {
+    items: findings,
+    totalItems,
+    currentPage,
+    totalPages,
+    itemsPerPage,
+    goToPage,
+    needsPagination,
+    setItemsPerPage,
+    filters: {
+      search: localSearch,
+      setSearch: setLocalSearch,
+      localClusterFilter,
+      toggleClusterFilter,
+      clearClusterFilter,
+      availableClusters,
+      showClusterFilter,
+      setShowClusterFilter,
+      clusterFilterRef,
+    },
+    sorting: { sortBy, setSortBy, sortDirection, setSortDirection },
+    containerRef,
+    containerStyle,
+  } = useCardData<ISO27001Finding, SortField>(rawFindings, {
+    filter: {
+      searchFields: ['label', 'category', 'cluster', 'details', 'status', 'severity'],
+      clusterField: 'cluster',
+      storageKey: 'iso27001-audit',
+    },
+    sort: {
+      defaultField: 'severity',
+      defaultDirection: 'desc',
+      comparators: {
+        severity: (a, b) => (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9),
+        category: (a, b) => a.category.localeCompare(b.category),
+        status: (a, b) => (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9),
+        cluster: (a, b) => a.cluster.localeCompare(b.cluster),
+      },
+    },
+    defaultLimit: 10,
+  })
+
+  // 6. Expandable verify commands
+  const [expandedVerify, setExpandedVerify] = useState<Set<string>>(new Set())
+  const toggleVerify = useCallback((cat: string) => {
+    setExpandedVerify(prev => {
       const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      saveCheckedState(next)
+      if (next.has(cat)) next.delete(cat)
+      else next.add(cat)
       return next
     })
   }, [])
 
-  const toggleCategory = useCallback((name: string) => {
-    setExpandedCategories(prev => {
-      const next = new Set(prev)
-      if (next.has(name)) next.delete(name)
-      else next.add(name)
-      return next
-    })
-  }, [])
+  // 7. Stats
+  const stats = useMemo(() => {
+    const pass = rawFindings.filter(f => f.status === 'pass').length
+    const fail = rawFindings.filter(f => f.status === 'fail').length
+    const warn = rawFindings.filter(f => f.status === 'warning').length
+    const manual = rawFindings.filter(f => f.status === 'manual').length
+    return { pass, fail, warn, manual, total: rawFindings.length }
+  }, [rawFindings])
 
-  const toggleVerify = useCallback((name: string) => {
-    setShowVerify(prev => {
-      const next = new Set(prev)
-      if (next.has(name)) next.delete(name)
-      else next.add(name)
-      return next
-    })
-  }, [])
+  const passPercent = stats.total > 0 ? Math.round((stats.pass / stats.total) * 100) : 0
 
-  const totalChecked = checked.size
-  const overallPercent = Math.round((totalChecked / TOTAL_CHECKS) * 100)
+  // 8. Loading skeleton
+  if (showSkeleton) {
+    return <CardSkeleton rows={5} showHeader showSearch />
+  }
 
-  const categoryStats = useMemo(() =>
-    AUDIT_CATEGORIES.map(cat => {
-      const catChecked = cat.checks.filter(c => checked.has(c.id)).length
-      return { ...cat, catChecked, percent: Math.round((catChecked / cat.checks.length) * 100) }
-    }), [checked])
+  // 9. Empty state
+  if (showEmptyState || (!isLoading && rawFindings.length === 0)) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center text-center p-4">
+        <Shield className="w-8 h-8 text-blue-400 mb-2" />
+        <p className="text-sm font-medium text-foreground">No audit data</p>
+        <p className="text-xs text-muted-foreground mt-1">Connect clusters via kc-agent to run ISO 27001 checks</p>
+      </div>
+    )
+  }
 
   return (
     <div className="h-full flex flex-col min-h-card content-loaded">
-      {/* Overall progress */}
-      <div className="mb-3">
-        <div className="flex items-center justify-between mb-1.5">
-          <div className="flex items-center gap-1.5">
+      {/* Header: stats + controls */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <Shield className="w-4 h-4 text-blue-400" />
-            <span className="text-xs font-medium text-foreground">
-              {totalChecked}/{TOTAL_CHECKS} controls passed
-            </span>
+            <span className={`text-xs font-bold ${
+              passPercent >= 80 ? 'text-green-400' : passPercent >= 50 ? 'text-yellow-400' : 'text-red-400'
+            }`}>{passPercent}%</span>
           </div>
-          <span className={`text-xs font-bold ${
-            overallPercent >= 80 ? 'text-green-400' :
-            overallPercent >= 50 ? 'text-yellow-400' :
-            'text-red-400'
-          }`}>
-            {overallPercent}%
-          </span>
+          <div className="flex items-center gap-1.5 text-[10px]">
+            <span className="text-green-400">{stats.pass} pass</span>
+            <span className="text-red-400">{stats.fail} fail</span>
+            {stats.warn > 0 && <span className="text-yellow-400">{stats.warn} warn</span>}
+          </div>
         </div>
-        <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-          <div
-            className={`h-full rounded-full transition-all duration-300 ${
-              overallPercent >= 80 ? 'bg-green-500' :
-              overallPercent >= 50 ? 'bg-yellow-500' :
-              'bg-red-500'
-            }`}
-            style={{ width: `${overallPercent}%` }}
+        <div className="flex items-center gap-1">
+          <CardClusterFilter
+            availableClusters={availableClusters}
+            selectedClusters={localClusterFilter}
+            onToggle={toggleClusterFilter}
+            onClear={clearClusterFilter}
+            isOpen={showClusterFilter}
+            setIsOpen={setShowClusterFilter}
+            containerRef={clusterFilterRef}
+            minClusters={1}
+          />
+          <CardControls
+            limit={itemsPerPage}
+            onLimitChange={setItemsPerPage}
+            sortBy={sortBy}
+            sortOptions={SORT_OPTIONS}
+            onSortChange={setSortBy}
+            sortDirection={sortDirection}
+            onSortDirectionChange={setSortDirection}
           />
         </div>
       </div>
 
-      {/* Category list */}
-      <div className="flex-1 space-y-1 overflow-y-auto pr-1">
-        {categoryStats.map(cat => {
-          const isExpanded = expandedCategories.has(cat.name)
-          const isVerifyShown = showVerify.has(cat.name)
+      {/* Search */}
+      <CardSearchInput
+        value={localSearch}
+        onChange={setLocalSearch}
+        placeholder="Search checks..."
+        className="mb-2"
+      />
+
+      {/* Findings list */}
+      <div
+        ref={containerRef}
+        className="flex-1 space-y-1 overflow-y-auto min-h-card-content"
+        style={containerStyle}
+      >
+        {findings.map((f, idx) => {
+          const verifyCmd = VERIFY_COMMANDS[f.category]
+          const isVerifyOpen = expandedVerify.has(`${f.checkId}-${f.cluster}-${idx}`)
+          const verifyKey = `${f.checkId}-${f.cluster}-${idx}`
 
           return (
-            <div key={cat.name} className="rounded-lg border border-border/50 overflow-hidden">
-              {/* Category header */}
-              <button
-                onClick={() => toggleCategory(cat.name)}
-                className="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-muted/50 transition-colors text-left"
-              >
-                {isExpanded
-                  ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-                  : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-                }
-                <span className="text-xs font-medium text-foreground flex-1 truncate">{cat.name}</span>
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                  cat.percent === 100 ? 'bg-green-500/20 text-green-400' :
-                  cat.percent > 0 ? 'bg-yellow-500/20 text-yellow-400' :
-                  'bg-muted text-muted-foreground'
-                }`}>
-                  {cat.catChecked}/{cat.checks.length}
-                </span>
-              </button>
-
-              {/* Expanded checks */}
-              {isExpanded && (
-                <div className="px-2.5 pb-2 space-y-0.5">
-                  {cat.checks.map(check => (
+            <div
+              key={`${f.checkId}-${f.cluster}-${idx}`}
+              className={`p-2 rounded-lg border text-xs ${
+                f.status === 'fail' ? 'bg-red-500/5 border-red-500/20' :
+                f.status === 'warning' ? 'bg-yellow-500/5 border-yellow-500/20' :
+                f.status === 'pass' ? 'bg-green-500/5 border-green-500/20' :
+                'bg-muted/30 border-border/50'
+              }`}
+            >
+              <div className="flex items-start gap-2">
+                <StatusIcon status={f.status} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-medium text-foreground truncate">{f.label}</span>
+                    <span className={`text-[9px] px-1 py-0.5 rounded font-medium ${
+                      f.severity === 'critical' ? 'bg-red-500/20 text-red-400' :
+                      f.severity === 'high' ? 'bg-orange-500/20 text-orange-400' :
+                      f.severity === 'medium' ? 'bg-yellow-500/20 text-yellow-400' :
+                      'bg-blue-500/20 text-blue-400'
+                    }`}>{f.severity}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-0.5 text-muted-foreground">
+                    <span className="truncate">{f.category}</span>
+                    <span>·</span>
+                    <span className="text-blue-400">{f.cluster}</span>
+                  </div>
+                  {f.details && (
+                    <p className="mt-0.5 text-muted-foreground truncate">{f.details}</p>
+                  )}
+                  {verifyCmd && (
                     <button
-                      key={check.id}
-                      onClick={() => toggleCheck(check.id)}
-                      className="w-full flex items-start gap-2 px-1.5 py-1 rounded hover:bg-muted/30 transition-colors text-left"
+                      onClick={() => toggleVerify(verifyKey)}
+                      className="flex items-center gap-0.5 mt-1 text-[10px] text-blue-400 hover:text-blue-300"
                     >
-                      {checked.has(check.id)
-                        ? <CheckCircle2 className="w-3.5 h-3.5 text-green-400 flex-shrink-0 mt-0.5" />
-                        : <Circle className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 mt-0.5" />
-                      }
-                      <span className={`text-[11px] leading-tight ${
-                        checked.has(check.id) ? 'text-muted-foreground line-through' : 'text-foreground'
-                      }`}>
-                        {check.label}
-                      </span>
+                      <Terminal className="w-3 h-3" />
+                      {isVerifyOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                      verify
                     </button>
-                  ))}
-
-                  {/* Verify command */}
-                  {cat.verify && (
-                    <div className="mt-1">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); toggleVerify(cat.name) }}
-                        className="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 transition-colors"
-                      >
-                        <Terminal className="w-3 h-3" />
-                        {isVerifyShown ? 'Hide' : 'Verify'}
-                      </button>
-                      {isVerifyShown && (
-                        <pre className="mt-1 p-1.5 rounded bg-muted/50 text-[10px] text-muted-foreground overflow-x-auto whitespace-pre-wrap break-all font-mono">
-                          {cat.verify}
-                        </pre>
-                      )}
-                    </div>
+                  )}
+                  {isVerifyOpen && verifyCmd && (
+                    <pre className="mt-1 p-1.5 rounded bg-muted/50 text-[10px] text-muted-foreground overflow-x-auto whitespace-pre-wrap break-all font-mono">
+                      {verifyCmd}
+                    </pre>
                   )}
                 </div>
-              )}
+              </div>
             </div>
           )
         })}
       </div>
 
-      {/* Footer */}
-      {totalChecked > 0 && totalChecked < TOTAL_CHECKS && (
-        <div className="mt-2 flex items-center gap-1.5 text-[10px] text-yellow-400">
-          <AlertTriangle className="w-3 h-3" />
-          <span>{TOTAL_CHECKS - totalChecked} controls remaining</span>
-        </div>
-      )}
-      {totalChecked === TOTAL_CHECKS && (
-        <div className="mt-2 flex items-center gap-1.5 text-[10px] text-green-400">
-          <CheckCircle2 className="w-3 h-3" />
-          <span>All {TOTAL_CHECKS} controls passed — audit ready</span>
+      {/* Pagination */}
+      {needsPagination && itemsPerPage !== 'unlimited' && (
+        <div className="pt-2 border-t border-border/50 mt-1">
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={totalItems}
+            itemsPerPage={typeof itemsPerPage === 'number' ? itemsPerPage : 10}
+            onPageChange={goToPage}
+            showItemsPerPage={false}
+          />
         </div>
       )}
     </div>

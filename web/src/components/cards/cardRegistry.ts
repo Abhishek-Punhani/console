@@ -639,8 +639,7 @@ export const DEMO_DATA_CARDS = new Set([
   // Note: kubescape_scan removed — now reports isDemoData via useKubescape hook
   // Note: policy_violations removed — now reports isDemoData via useKyverno hook
   // Note: compliance_score removed — now reports isDemoData via useKubescape/useKyverno hooks
-  // ISO 27001 audit checklist - static checklist, always demo
-  'iso27001_audit',
+  // Note: iso27001_audit removed — now reports isDemoData via useCachedISO27001Audit hook
   // Security posture cards - demo until tools are detected
   'falco_alerts',
   // Data compliance cards - demo until tools are detected
