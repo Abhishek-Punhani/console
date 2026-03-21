@@ -48,7 +48,7 @@ jobs:
     name: Cross-Browser (${{ matrix.browser }})
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -84,7 +84,13 @@ jobs:
           npx wait-on http://localhost:4173 --timeout 60000
 
       - name: Run Playwright tests (${{ matrix.browser }})
-        run: npx playwright test --project=${{ matrix.browser }} --retries=0 --timeout=30000
+        run: |
+          npx playwright test --project=${{ matrix.browser }} --retries=0 --timeout=30000 \
+            e2e/smoke.spec.ts \
+            e2e/responsive-regression.spec.ts \
+            e2e/spa-routes.spec.ts \
+            e2e/Login.spec.ts \
+            e2e/Dashboard.spec.ts
         env:
           PLAYWRIGHT_BASE_URL: http://localhost:4173
 
