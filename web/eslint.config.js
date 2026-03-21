@@ -24,6 +24,14 @@ export default tseslint.config(
         { allowConstantExport: true },
       ],
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      // Warn on patterns that often indicate unbatched state updates (#3049)
+      // Encourages useReducer or single-object setState for related state
+      'no-restricted-syntax': ['warn',
+        {
+          selector: 'CallExpression[callee.name=/^set[A-Z]/] + CallExpression[callee.name=/^set[A-Z]/]',
+          message: 'Consecutive setState calls may cause UI flicker. Consider batching with useReducer or a single state object.',
+        },
+      ],
     },
   },
 )
