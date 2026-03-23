@@ -1,6 +1,7 @@
-import { Shield, Terminal, AlertTriangle } from 'lucide-react'
+import { Shield, AlertTriangle } from 'lucide-react'
 import { BaseModal } from '../../lib/modals'
 import type { AgentInfo } from '../../types/agent'
+import { AgentIcon } from './AgentIcon'
 
 const APPROVED_KEY = 'kc_agents_approved'
 
@@ -76,7 +77,7 @@ export function AgentApprovalDialog({ isOpen, agents, onApprove, onCancel }: Age
                   key={agent.name}
                   className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30 border border-border"
                 >
-                  <Terminal className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                  <AgentIcon provider={agent.provider} className="w-5 h-5 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <span className="text-sm font-medium text-foreground">{agent.displayName}</span>
                     <p className="text-xs text-muted-foreground truncate">{agent.description}</p>

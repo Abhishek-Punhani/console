@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Server, Box, Wifi, WifiOff } from 'lucide-react'
 import { useLocalAgent } from '../../../hooks/useLocalAgent'
 import { useMissions } from '../../../hooks/useMissions'
@@ -9,6 +9,8 @@ import { AgentApprovalDialog, hasApprovedAgents } from '../../agent/AgentApprova
 import { cn } from '../../../lib/cn'
 import { useTranslation } from 'react-i18next'
 import { TOAST_DISMISS_MS } from '../../../lib/constants/network'
+import { LOCAL_AGENT_HTTP_URL } from '../../../lib/constants/network'
+import type { AgentInfo } from '../../../types/agent'
 
 export function AgentStatusIndicator() {
   const { t } = useTranslation(['common'])
@@ -21,7 +23,40 @@ export function AgentStatusIndicator() {
   const [showAgentStatus, setShowAgentStatus] = useState(false)
   const [showSetupDialog, setShowSetupDialog] = useState(false)
   const [showApprovalDialog, setShowApprovalDialog] = useState(false)
+  const [discoveredAgents, setDiscoveredAgents] = useState<AgentInfo[]>([])
   const agentRef = useRef<HTMLDivElement>(null)
+
+  // Fetch agents from kc-agent health endpoint (works even in demo mode
+  // when the WebSocket is not connected)
+  const fetchAgentsFromHealth = useCallback(async () => {
+    try {
+      const res = await fetch(`${LOCAL_AGENT_HTTP_URL}/health`)
+      if (!res.ok) return
+      const data = await res.json()
+      if (data.availableProviders) {
+        // Map agent name to provider type for icon rendering
+        const nameToProvider: Record<string, string> = {
+          'claude-code': 'anthropic-local',
+          'codex': 'openai-cli',
+          'copilot-cli': 'github',
+          'gemini-cli': 'google-cli',
+          'antigravity': 'google-ag',
+          'bob': 'bob',
+          'gh-copilot': 'github',
+        }
+        setDiscoveredAgents(data.availableProviders.map((p: { name: string; displayName: string; capabilities: number }) => ({
+          name: p.name,
+          displayName: p.displayName,
+          description: '',
+          provider: nameToProvider[p.name] || p.name,
+          available: true,
+          capabilities: p.capabilities,
+        })))
+      }
+    } catch {
+      // kc-agent not reachable
+    }
+  }, [])
   const dropdownRef = useRef<HTMLDivElement>(null)
 
   // ── Stabilize pill status ──────────────────────────────────────────────
@@ -175,6 +210,9 @@ export function AgentStatusIndicator() {
                     setShowAgentStatus(false)
                   } else if (isDemoMode && !hasApprovedAgents()) {
                     // Switching from demo → agent: require opt-in first
+                    // Fetch agents from kc-agent before showing dialog
+                    // (WebSocket is not connected in demo mode)
+                    fetchAgentsFromHealth()
                     setShowApprovalDialog(true)
                     setShowAgentStatus(false)
                   } else {
@@ -328,7 +366,7 @@ export function AgentStatusIndicator() {
       <SetupInstructionsDialog isOpen={showSetupDialog} onClose={() => setShowSetupDialog(false)} />
       <AgentApprovalDialog
         isOpen={showApprovalDialog}
-        agents={agents}
+        agents={agents.length > 0 ? agents : discoveredAgents}
         onApprove={() => {
           setShowApprovalDialog(false)
           toggleDemoMode()
