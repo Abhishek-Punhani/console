@@ -201,36 +201,24 @@ export default defineConfig(({ mode }) => ({
         './src/App.tsx',
       ],
     },
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
-      '/health': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
-      '/auth/github': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
-      '/auth/github/callback': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
-      '/auth/refresh': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
-      '/api/m': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-      },
-      '/ws': {
-        target: 'ws://localhost:8080',
-        ws: true,
-      },
-    },
+    proxy: (() => {
+      // When the watchdog runs with TLS on port 8080, the backend listens
+      // on BACKEND_LISTEN_PORT (default 8081) in plain HTTP. Proxy directly
+      // to the backend to avoid "Client sent an HTTP request to an HTTPS server".
+      const backendPort = process.env.BACKEND_LISTEN_PORT || '8081'
+      const target = `http://localhost:${backendPort}`
+      const wsTarget = `ws://localhost:${backendPort}`
+      const opts = { target, changeOrigin: true }
+      return {
+        '/api': { ...opts },
+        '/health': { ...opts },
+        '/auth/github': { ...opts },
+        '/auth/github/callback': { ...opts },
+        '/auth/refresh': { ...opts },
+        '/api/m': { ...opts },
+        '/ws': { target: wsTarget, ws: true },
+      }
+    })(),
   },
   test: {
     globals: true,

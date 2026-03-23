@@ -79,7 +79,7 @@ export function DeploymentStatus() {
   } = useCachedDeployments()
 
   // Report data state to CardWrapper for failure badge rendering
-  const { showSkeleton } = useCardLoadingState({
+  const { showSkeleton, showEmptyState } = useCardLoadingState({
     isLoading: hookLoading,
     isDemoData: isDemoFallback,
     hasAnyData: allDeployments.length > 0,
@@ -198,7 +198,7 @@ export function DeploymentStatus() {
     )
   }
 
-  if (globalFilteredDeployments.length === 0) {
+  if (showEmptyState && globalFilteredDeployments.length === 0) {
     return (
       <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
         No deployments found

@@ -31,6 +31,8 @@ function EventStreamInternal() {
     isRefreshing,
     lastRefresh,
     error,
+    isFailed,
+    consecutiveFailures,
   } = useCachedEvents(undefined, undefined, { limit: 100, category: 'realtime' })
 
   // Report state to CardWrapper for refresh animation
@@ -38,8 +40,8 @@ function EventStreamInternal() {
     isLoading: hookLoading,
     isDemoData: isDemoMode || isDemoFallback,
     hasAnyData: rawEvents.length > 0,
-    isFailed: !!error && rawEvents.length === 0,
-    consecutiveFailures: error ? 1 : 0,
+    isFailed,
+    consecutiveFailures,
     isRefreshing,
   })
 

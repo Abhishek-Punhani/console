@@ -163,6 +163,7 @@ export function CardRecommendations({ currentCardTypes, onAddCard }: Props) {
   }
 
   // Minimized inline view — label + pills on one row
+  // Clicking a chip shows a dropdown tooltip inline without expanding the full panel
   if (minimized) {
     return (
       <div data-tour="recommendations" className="mb-4">
@@ -177,15 +178,74 @@ export function CardRecommendations({ currentCardTypes, onAddCard }: Props) {
           </button>
           {visibleRecommendations.slice(0, 6).map((rec) => {
             const Icon = getPriorityIcon(rec.priority)
+            const isExpanded = expandedRec === rec.id
+            const isAdding = addingCard === rec.id
             return (
-              <button
-                key={rec.id}
-                onClick={() => { setMinimized(false); setExpandedRec(rec.id) }}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium transition-all hover:scale-105 ${CHIP_STYLE.border} ${CHIP_STYLE.bg} ${CHIP_STYLE.text}`}
-              >
-                <Icon className="w-3 h-3" />
-                <span className="max-w-[150px] truncate">{rec.title}</span>
-              </button>
+              <div key={rec.id} className="relative">
+                <button
+                  onClick={() => setExpandedRec(isExpanded ? null : rec.id)}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-medium transition-all hover:scale-105 ${CHIP_STYLE.border} ${CHIP_STYLE.bg} ${CHIP_STYLE.text}`}
+                >
+                  <Icon className="w-3 h-3" />
+                  <span className="max-w-[150px] truncate">{rec.title}</span>
+                  {isAdding && <div className="spinner w-3 h-3" />}
+                  <ChevronDown className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                </button>
+
+                {/* Inline dropdown — appears below the chip without expanding the panel */}
+                {isExpanded && (
+                  <div
+                    ref={dropdownRef}
+                    role="menu"
+                    className="absolute top-full left-0 mt-1 z-50 w-72 rounded-lg border border-border/50 bg-card shadow-xl"
+                    onKeyDown={(e) => {
+                      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+                      e.preventDefault()
+                      const items = e.currentTarget.querySelectorAll<HTMLElement>('button:not([disabled])')
+                      const idx = Array.from(items).indexOf(document.activeElement as HTMLElement)
+                      if (e.key === 'ArrowDown') items[Math.min(idx + 1, items.length - 1)]?.focus()
+                      else items[Math.max(idx - 1, 0)]?.focus()
+                    }}
+                  >
+                    <div className="p-3">
+                      <div className="text-xs text-muted-foreground mb-2">{rec.reason}</div>
+                      <div className="text-xs text-muted-foreground mb-3">
+                        <ul className="ml-3 list-disc space-y-0.5">
+                          <li>{t('dashboard.recommendations.addCard', { title: rec.title })}</li>
+                          <li>{t('dashboard.recommendations.showRealTimeData')}</li>
+                          {rec.priority === 'high' && <li>{t('dashboard.recommendations.addressCriticalIssues')}</li>}
+                        </ul>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          icon={<Plus className="w-3 h-3" />}
+                          loading={isAdding}
+                          onClick={() => handleAddCard(rec)}
+                          className="flex-1"
+                        >
+                          {isAdding ? t('dashboard.recommendations.adding') : t('buttons.addCard')}
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          icon={<Clock className="w-3 h-3" />}
+                          onClick={(e) => handleSnooze(e, rec)}
+                          title={t('dashboard.recommendations.snooze')}
+                        />
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          icon={<X className="w-3 h-3" />}
+                          onClick={handleDismiss}
+                          title={t('dashboard.recommendations.dismiss')}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             )
           })}
           {highPriorityCount > 0 && (

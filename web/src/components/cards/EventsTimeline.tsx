@@ -102,6 +102,8 @@ function EventsTimelineInternal() {
     isDemoFallback,
     isRefreshing,
     lastRefresh,
+    isFailed,
+    consecutiveFailures,
   } = useCachedEvents(undefined, undefined, { limit: 100, category: 'realtime' })
 
   const { deduplicatedClusters: clusters } = useClusters()
@@ -111,6 +113,8 @@ function EventsTimelineInternal() {
     isLoading: hookLoading,
     isDemoData: isDemoMode || isDemoFallback,
     hasAnyData: events.length > 0,
+    isFailed,
+    consecutiveFailures,
     isRefreshing,
   })
   const { selectedClusters, isAllClustersSelected, clusterInfoMap } = useGlobalFilters()

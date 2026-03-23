@@ -155,13 +155,13 @@ describe('MissionProvider', () => {
     expect(screen.getByText('hello')).toBeTruthy()
   })
 
-  it('useMissions throws when used outside MissionProvider', () => {
-    // Suppress the expected React error boundary output
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    expect(() => renderHook(() => useMissions())).toThrow(
-      'useMissions must be used within a MissionProvider',
-    )
-    consoleSpy.mockRestore()
+  it('useMissions returns safe fallback when used outside MissionProvider', () => {
+    const { result } = renderHook(() => useMissions())
+    expect(result.current.missions).toEqual([])
+    expect(result.current.activeMission).toBeNull()
+    expect(result.current.isAIDisabled).toBe(true)
+    expect(typeof result.current.startMission).toBe('function')
+    expect(result.current.startMission({ title: '', description: '', type: 'troubleshoot', initialPrompt: '' })).toBe('')
   })
 
   it('exposes the expected context shape', () => {

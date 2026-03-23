@@ -48,6 +48,35 @@ const STORE_NAME = 'cache'
 /** Maximum consecutive failures before marking as failed */
 const MAX_FAILURES = 3
 
+/**
+ * sessionStorage prefix for sync cache snapshots.
+ * sessionStorage is synchronous, survives page reload (same tab), and is
+ * automatically cleared when the tab closes — no stale data accumulation.
+ * Used to hydrate CacheStore constructors instantly, avoiding skeleton flash.
+ */
+const SS_PREFIX = 'kcc:'
+
+/** Try to write a cache entry to sessionStorage (best-effort, quota-safe). */
+function ssWrite(key: string, data: unknown, timestamp: number): void {
+  try {
+    sessionStorage.setItem(SS_PREFIX + key, JSON.stringify({ d: data, t: timestamp }))
+  } catch {
+    // QuotaExceededError — silently skip, IDB is the durable fallback
+  }
+}
+
+/** Synchronous read from sessionStorage. Returns null on miss or parse error. */
+function ssRead<T>(key: string): { data: T; timestamp: number } | null {
+  try {
+    const raw = sessionStorage.getItem(SS_PREFIX + key)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return parsed && parsed.d !== undefined ? { data: parsed.d as T, timestamp: parsed.t } : null
+  } catch {
+    return null
+  }
+}
+
 /** Base backoff multiplier for consecutive failures */
 const FAILURE_BACKOFF_MULTIPLIER = 2
 
@@ -229,6 +258,9 @@ class IndexedDBStorage implements CacheStorage {
   private db: IDBDatabase | null = null
   private dbPromise: Promise<IDBDatabase> | null = null
   private isSupported: boolean = true
+  /** In-memory snapshot populated by preloadAll() — makes get() synchronous after startup */
+  private snapshot = new Map<string, CacheEntry<unknown>>()
+  private snapshotReady = false
 
   constructor() {
     this.isSupported = typeof indexedDB !== 'undefined'
@@ -257,7 +289,51 @@ class IndexedDBStorage implements CacheStorage {
     return this.dbPromise
   }
 
+  /**
+   * Batch-read ALL entries from IndexedDB in a single transaction.
+   * Called once at startup so subsequent get() calls are instant Map lookups.
+   */
+  async preloadAll(): Promise<Map<string, CacheEntry<unknown>>> {
+    if (!this.isSupported) return this.snapshot
+    try {
+      const db = await this.initDB()
+      return new Promise((resolve) => {
+        const tx = db.transaction(STORE_NAME, 'readonly')
+        const req = tx.objectStore(STORE_NAME).getAll()
+        req.onsuccess = () => {
+          const entries = req.result as CacheEntry<unknown>[]
+          for (const entry of entries) {
+            if (entry.version === CACHE_VERSION) {
+              this.snapshot.set(entry.key, entry)
+            }
+          }
+          this.snapshotReady = true
+          resolve(this.snapshot)
+        }
+        req.onerror = () => { this.snapshotReady = true; resolve(this.snapshot) }
+      })
+    } catch {
+      this.snapshotReady = true
+      return this.snapshot
+    }
+  }
+
+  /**
+   * Synchronous read from the in-memory snapshot.
+   * Returns null if snapshot isn't ready yet or key doesn't exist.
+   * Used by CacheStore constructor for zero-delay cache hydration.
+   */
+  getFromSnapshot<T>(key: string): CacheEntry<T> | null {
+    if (!this.snapshotReady) return null
+    return (this.snapshot.get(key) as CacheEntry<T>) ?? null
+  }
+
   async get<T>(key: string): Promise<CacheEntry<T> | null> {
+    // Fast path: return from in-memory snapshot (populated by preloadAll)
+    if (this.snapshotReady) {
+      const cached = this.snapshot.get(key) as CacheEntry<T> | undefined
+      return cached ?? null
+    }
     if (!this.isSupported) return null
     try {
       const db = await this.initDB()
@@ -278,6 +354,8 @@ class IndexedDBStorage implements CacheStorage {
     try {
       const db = await this.initDB()
       const entry: CacheEntry<T> = { key, data, timestamp: Date.now(), version: CACHE_VERSION }
+      // Keep snapshot in sync so future get() calls return fresh data
+      this.snapshot.set(key, entry as CacheEntry<unknown>)
       return new Promise((resolve, reject) => {
         const req = db.transaction(STORE_NAME, 'readwrite').objectStore(STORE_NAME).put(entry)
         req.onsuccess = () => resolve()
@@ -288,6 +366,7 @@ class IndexedDBStorage implements CacheStorage {
 
   async delete(key: string): Promise<void> {
     if (!this.isSupported) return
+    this.snapshot.delete(key)
     try {
       const db = await this.initDB()
       return new Promise((resolve) => {
@@ -300,6 +379,7 @@ class IndexedDBStorage implements CacheStorage {
 
   async clear(): Promise<void> {
     if (!this.isSupported) return
+    this.snapshot.clear()
     try {
       const db = await this.initDB()
       return new Promise((resolve) => {
@@ -347,7 +427,13 @@ let workerRpc: CacheWorkerRpc | null = null
 // ============================================================================
 
 /** The active storage backend — WorkerStorage or IndexedDB fallback. */
-let cacheStorage: CacheStorage = new IndexedDBStorage()
+const _idbStorage = new IndexedDBStorage()
+let cacheStorage: CacheStorage = _idbStorage
+
+// Start batch-reading ALL IDB entries immediately at module load.
+// By the time components mount and call loadFromStorage(), the snapshot
+// is populated and get() returns synchronously from the Map.
+const _idbPreloadPromise = _idbStorage.preloadAll()
 
 /**
  * Initialize the SQLite Web Worker cache backend.
@@ -476,22 +562,37 @@ class CacheStore<T> {
     // Initialize with initial data, then async load from storage
     const meta = this.loadMeta()
 
-    // Always start with isLoading=true until we confirm cached data exists.
-    // This prevents the "blank card" state where isLoading=false but data hasn't arrived.
-    // The loadFromStorage() method will set isLoading=false, isRefreshing=true when cache is found.
-    this.state = {
-      data: initialData,
-      isLoading: true, // Always start loading - will be set false when cache found or fetch completes
-      isRefreshing: false,
-      error: null, // Don't surface errors at dashboard level
-      isFailed: meta.consecutiveFailures >= MAX_FAILURES,
-      consecutiveFailures: meta.consecutiveFailures,
-      lastRefresh: meta.lastSuccessfulRefresh ?? null,
-    }
-
-    // Async load from storage - store the promise so we can await it before fetching
-    if (this.persist) {
-      this.storageLoadPromise = this.loadFromStorage()
+    // Try to hydrate from sessionStorage (synchronous — survives page reload).
+    // Falls back to IDB snapshot if available, then async IDB read.
+    const ssEntry = this.persist ? ssRead<T>(key) : null
+    const snapshot = ssEntry
+      ?? (this.persist ? _idbStorage.getFromSnapshot<T>(key) : null)
+    if (snapshot && !isEquivalentToInitial(snapshot.data, initialData)) {
+      this.initialDataLoaded = true
+      this.state = {
+        data: snapshot.data,
+        isLoading: false,
+        isRefreshing: true,
+        error: null,
+        isFailed: false,
+        consecutiveFailures: 0,
+        lastRefresh: snapshot.timestamp,
+      }
+      this.storageLoadPromise = Promise.resolve()
+    } else {
+      this.state = {
+        data: initialData,
+        isLoading: true,
+        isRefreshing: false,
+        error: null,
+        isFailed: meta.consecutiveFailures >= MAX_FAILURES,
+        consecutiveFailures: meta.consecutiveFailures,
+        lastRefresh: meta.lastSuccessfulRefresh ?? null,
+      }
+      // Async fallback — load from storage if snapshot wasn't ready
+      if (this.persist) {
+        this.storageLoadPromise = this.loadFromStorage()
+      }
     }
   }
 
@@ -499,22 +600,24 @@ class CacheStore<T> {
   private async loadFromStorage(): Promise<void> {
     if (!this.persist || this.initialDataLoaded) return
 
+    // Wait for the IDB batch preload to finish so get() hits the in-memory Map
+    await _idbPreloadPromise
+
     try {
       const entry = await cacheStorage.get<T>(this.key)
-      if (entry) {
-        // Cache found - show cached data immediately, start background refresh
+      if (entry && !isEquivalentToInitial(entry.data, this.initialData)) {
+        // Cache found with real data - show immediately, start background refresh.
         this.initialDataLoaded = true
+        // Mirror to sessionStorage so next reload hydrates synchronously
+        ssWrite(this.key, entry.data, entry.timestamp)
         this.setState({
           data: entry.data,
           isLoading: false,
-          isRefreshing: true, // Will fetch latest in background
+          isRefreshing: true,
           lastRefresh: entry.timestamp,
-          // Clear stale failure state — we have cached data to show.
-          // Matches error handler logic: when hasData, isFailed=false.
           isFailed: false,
           consecutiveFailures: 0,
         })
-        // Persist the reset so next page load doesn't start with stale failures
         this.saveMeta({ consecutiveFailures: 0, lastSuccessfulRefresh: entry.timestamp })
       }
     } catch {
@@ -524,6 +627,9 @@ class CacheStore<T> {
 
   private async saveToStorage(data: T): Promise<void> {
     if (!this.persist) return
+    // Write to sessionStorage first (sync, survives reload) so next page load
+    // can hydrate the store instantly in the constructor.
+    ssWrite(this.key, data, Date.now())
     try {
       await cacheStorage.set(this.key, data)
     } catch (e) {
@@ -662,6 +768,8 @@ class CacheStore<T> {
       // more clusters are still streaming in via SSE.
       const onProgress = progressiveFetcher ? (partialData: T) => {
         if (this.resetVersion !== fetchVersion) return  // stale — ignore
+        // Skip empty progress updates — don't wipe cached data with []
+        if (isEquivalentToInitial(partialData, this.initialData)) return
         this.setState({
           data: partialData,
         })
@@ -677,16 +785,24 @@ class CacheStore<T> {
         return
       }
 
-      // Guard: if the fetcher returned data equivalent to initialData but we
-      // already have cached data, keep the cache. This prevents refresh from
-      // wiping card data when the agent/backend hasn't connected yet.
-      // Fetchers return [] or empty objects when data sources are unavailable.
-      if (hasCachedData && isEquivalentToInitial(newData, this.initialData)) {
-        // Don't overwrite cache — treat as "no data available yet"
+      // Guard: fetcher returned empty data (equivalent to initialData).
+      // This happens when the agent/backend hasn't connected yet.
+      if (isEquivalentToInitial(newData, this.initialData)) {
+        if (hasCachedData) {
+          // Have cache — keep it, just stop refreshing
+          this.fetchingRef = false
+          this.setState({ isLoading: false, isRefreshing: false })
+          return
+        }
+        // Cold load with no cache — keep skeleton visible, track as failure
+        // so auto-refresh retries. Don't save empty data to storage.
         this.fetchingRef = false
+        const newFailures = this.state.consecutiveFailures + 1
+        this.saveMeta({ consecutiveFailures: newFailures, lastError: 'Empty result — waiting for data source' })
         this.setState({
-          isLoading: false,
+          isLoading: true,
           isRefreshing: false,
+          consecutiveFailures: newFailures,
         })
         return
       }

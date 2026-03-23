@@ -16,7 +16,7 @@ import {
   initPreloadedMeta,
   migrateIDBToSQLite,
   migrateFromLocalStorage,
-  preloadCacheFromStorage,
+
 } from './lib/cache'
 // Import dynamic card/stats persistence loaders
 import { loadDynamicCards, getAllDynamicCards, loadDynamicStats } from './lib/dynamic-cards'
@@ -83,64 +83,14 @@ enableMocking()
   .catch((error) => {
     console.error('MSW initialization failed:', error)
   })
-  .finally(async () => {
-    // Initialize SQLite Web Worker for cache storage (replaces IndexedDB + localStorage)
-    try {
-      const rpc = await initCacheWorker()
-
-      // One-time migration from IndexedDB + localStorage to SQLite
-      if (!localStorage.getItem(STORAGE_KEY_SQLITE_MIGRATED)) {
-        await migrateFromLocalStorage() // Clean up legacy ksc_ keys first
-        await migrateIDBToSQLite()      // Move IDB data + localStorage meta to SQLite
-        localStorage.setItem(STORAGE_KEY_SQLITE_MIGRATED, '2')
-      }
-
-      // Seed cache from perf test data if available (set by Playwright addInitScript)
-      const seed = (window as Window & { __CACHE_SEED__?: Array<{ key: string; entry: { data: unknown; timestamp: number; version: number } }> }).__CACHE_SEED__
-      if (seed) {
-        await rpc.seedCache(seed)
-      }
-
-      // Preload all metadata into in-memory Map (replaces sync localStorage reads)
-      const { meta } = await rpc.preloadAll()
-      initPreloadedMeta(meta)
-    } catch (e) {
-      console.error('[Cache] SQLite worker init failed, using IndexedDB fallback:', e)
-      // Fallback: run legacy migrations and preload from IndexedDB
-      try { await migrateFromLocalStorage() } catch { /* ignore */ }
-    }
-
-    // Preload cache data from storage before rendering
-    // This ensures cached data is available immediately when components mount
-    try {
-      await preloadCacheFromStorage()
-    } catch (e) {
-      console.error('[Cache] Preload failed:', e)
-    }
-
-    // Restore dynamic cards and stat blocks from localStorage.
-    // registerDynamicCardType is dynamically imported to keep cardRegistry
-    // (~52 KB + 195 KB card configs) out of the main chunk.
+  .finally(() => {
+    // ── Sync setup (fast, must happen before render) ──────────────────
     loadDynamicCards()
     const dynamicCards = getAllDynamicCards()
-    if (dynamicCards.length > 0) {
-      const { registerDynamicCardType } = await import('./components/cards/cardRegistry')
-      dynamicCards.forEach(card => {
-        registerDynamicCardType(card.id, card.defaultWidth ?? 6)
-      })
-    }
     loadDynamicStats()
-
-    // Register unified card data hooks — loaded as a dynamic import so the
-    // MCP hooks (~300 KB) end up in a separate chunk that the browser downloads
-    // in parallel with the main bundle, reducing time-to-first-paint.
-    await import('./lib/unified/registerHooks')
-
-    // Initialize analytics BEFORE first render so interaction-gate listeners
-    // register before the user clicks/scrolls. BrandingProvider will later
-    // call updateAnalyticsIds() to override measurement IDs for white-label.
     initAnalytics()
 
+    // ── Render FIRST — don't block on async work ──────────────────────
     ReactDOM.createRoot(document.getElementById('root')!).render(
       <React.StrictMode>
         <BrowserRouter>
@@ -148,4 +98,41 @@ enableMocking()
         </BrowserRouter>
       </React.StrictMode>,
     )
+
+    // ── Async setup (runs in background after render) ─────────────────
+    // Cache worker init (SQLite or IndexedDB fallback)
+    ;(async () => {
+      try {
+        const rpc = await initCacheWorker()
+
+        if (!localStorage.getItem(STORAGE_KEY_SQLITE_MIGRATED)) {
+          await migrateFromLocalStorage()
+          await migrateIDBToSQLite()
+          localStorage.setItem(STORAGE_KEY_SQLITE_MIGRATED, '2')
+        }
+
+        const seed = (window as Window & { __CACHE_SEED__?: Array<{ key: string; entry: { data: unknown; timestamp: number; version: number } }> }).__CACHE_SEED__
+        if (seed) {
+          await rpc.seedCache(seed)
+        }
+
+        const { meta } = await rpc.preloadAll()
+        initPreloadedMeta(meta)
+      } catch (e) {
+        console.error('[Cache] SQLite worker init failed, using IndexedDB fallback:', e)
+        try { await migrateFromLocalStorage() } catch { /* ignore */ }
+      }
+    })()
+
+    // Register dynamic card types (needs async import for cardRegistry)
+    if (dynamicCards.length > 0) {
+      import('./components/cards/cardRegistry').then(({ registerDynamicCardType }) => {
+        dynamicCards.forEach(card => {
+          registerDynamicCardType(card.id, card.defaultWidth ?? 6)
+        })
+      })
+    }
+
+    // Register unified card data hooks (background — ~300 KB chunk)
+    import('./lib/unified/registerHooks')
   })

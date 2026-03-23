@@ -677,7 +677,7 @@ export function connectSharedWebSocket() {
 
   try {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.hostname}:8080/ws`
+    const wsUrl = `${protocol}//${window.location.host}/ws`
 
     const ws = new WebSocket(wsUrl)
 

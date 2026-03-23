@@ -207,6 +207,9 @@ export function ResourceUsage() {
               <Cpu className={`w-4 h-4 ${accel.color}`} />
               <span className="text-sm text-muted-foreground">{accel.label}</span>
             </div>
+            {accel.percent > 100 && (
+              <span className="text-2xs text-red-400 mt-0.5">{accel.data.used}/{accel.data.total} overcommitted</span>
+            )}
           </div>
         ))}
       </div>

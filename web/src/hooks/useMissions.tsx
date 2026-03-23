@@ -1440,10 +1440,55 @@ Install the console locally with the KubeStellar Console agent to use AI mission
   )
 }
 
+/**
+ * Safe fallback for when useMissions is called outside MissionProvider.
+ *
+ * This can happen transiently during error-boundary recovery, stale chunk
+ * re-evaluation, or portal rendering in BaseModal (createPortal to
+ * document.body). Rather than throwing (which triggers cascading GA4
+ * runtime errors on /insights), return a no-op stub so the UI degrades
+ * gracefully until the provider tree re-mounts.
+ */
+const MISSIONS_FALLBACK: MissionContextValue = {
+  missions: [],
+  activeMission: null,
+  isSidebarOpen: false,
+  isSidebarMinimized: false,
+  isFullScreen: false,
+  unreadMissionCount: 0,
+  unreadMissionIds: new Set<string>(),
+  agents: [],
+  selectedAgent: null,
+  defaultAgent: null,
+  agentsLoading: false,
+  isAIDisabled: true,
+  startMission: () => '',
+  saveMission: () => '',
+  runSavedMission: () => {},
+  sendMessage: () => {},
+  cancelMission: () => {},
+  dismissMission: () => {},
+  renameMission: () => {},
+  rateMission: () => {},
+  setActiveMission: () => {},
+  markMissionAsRead: () => {},
+  selectAgent: () => {},
+  connectToAgent: () => {},
+  toggleSidebar: () => {},
+  openSidebar: () => {},
+  closeSidebar: () => {},
+  minimizeSidebar: () => {},
+  expandSidebar: () => {},
+  setFullScreen: () => {},
+}
+
 export function useMissions() {
   const context = useContext(MissionContext)
   if (!context) {
-    throw new Error('useMissions must be used within a MissionProvider')
+    if (import.meta.env.DEV) {
+      console.warn('useMissions was called outside MissionProvider — returning safe fallback')
+    }
+    return MISSIONS_FALLBACK
   }
   return context
 }

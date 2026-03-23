@@ -140,10 +140,9 @@ export function ClusterHealth() {
   // Report state to CardWrapper for refresh animation
   // Show skeleton if loading OR if we haven't completed the initial fetch yet
   // This prevents the empty card flash while waiting for initial data
-  const hasCompletedInitialFetch = lastRefresh !== null
   const hasData = rawClusters.length > 0
   const { showSkeleton, showEmptyState } = useCardLoadingState({
-    isLoading: isLoadingHook || !hasCompletedInitialFetch,
+    isLoading: isLoadingHook && !hasData,
     isRefreshing,
     hasAnyData: hasData,
     isFailed: !!error && !hasData,

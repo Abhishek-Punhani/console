@@ -12,18 +12,26 @@ import { getCardConfig } from '../../config/cards'
 import { registerAllDescriptorCards } from './cardDescriptors.registry'
 import { CARD_TITLES, CARD_DESCRIPTIONS, DEMO_EXEMPT_CARDS } from './cardMetadata'
 
-// Lazy load all card components for better code splitting
-const ClusterHealth = safeLazy(() => import('./ClusterHealth'), 'ClusterHealth')
-const EventStream = safeLazy(() => import('./EventStream'), 'EventStream')
-const PodIssues = safeLazy(() => import('./PodIssues'), 'PodIssues')
+// Eagerly import the default main-dashboard cards so they render instantly on
+// page load (no React.lazy chunk delay).  These are the 10 cards in the "main"
+// dashboard config — waiting for Vite to compile their chunks causes 10-15s of
+// skeletons even when cached data is available.
+import { ClusterHealth } from './ClusterHealth'
+import { EventStream } from './EventStream'
+import { PodIssues } from './PodIssues'
+import { ResourceUsage } from './ResourceUsage'
+import { ClusterMetrics } from './ClusterMetrics'
+import { EventsTimeline } from './EventsTimeline'
+import { HardwareHealthCard } from './HardwareHealthCard'
+import { ConsoleOfflineDetectionCard } from './console-missions/ConsoleOfflineDetectionCard'
+import { DeploymentStatus } from './DeploymentStatus'
+// Remaining cards are lazy-loaded for code splitting
 const TopPods = safeLazy(() => import('./TopPods'), 'TopPods')
 const AppStatus = safeLazy(() => import('./AppStatus'), 'AppStatus')
-const ResourceUsage = safeLazy(() => import('./ResourceUsage'), 'ResourceUsage')
-const ClusterMetrics = safeLazy(() => import('./ClusterMetrics'), 'ClusterMetrics')
 // Deploy dashboard cards — eagerly start loading the barrel at module parse time
 // so all 16 cards share one chunk download instead of 16 separate HTTP requests.
 const _deployBundle = import('./deploy-bundle').catch(() => undefined as never)
-const DeploymentStatus = safeLazy(() => _deployBundle, 'DeploymentStatus')
+// DeploymentStatus eagerly imported above
 const DeploymentProgress = safeLazy(() => _deployBundle, 'DeploymentProgress')
 const DeploymentIssues = safeLazy(() => _deployBundle, 'DeploymentIssues')
 const GitOpsDrift = safeLazy(() => _deployBundle, 'GitOpsDrift')
@@ -38,7 +46,7 @@ const SecurityIssues = safeLazy(() => import('./SecurityIssues'), 'SecurityIssue
 const EventSummary = safeLazy(() => import('./EventSummary'), 'EventSummary')
 const WarningEvents = safeLazy(() => import('./WarningEvents'), 'WarningEvents')
 const RecentEvents = safeLazy(() => import('./RecentEvents'), 'RecentEvents')
-const EventsTimeline = safeLazy(() => import('./EventsTimeline'), 'EventsTimeline')
+// EventsTimeline eagerly imported above
 const PodHealthTrend = safeLazy(() => import('./PodHealthTrend'), 'PodHealthTrend')
 const ResourceTrend = safeLazy(() => import('./ResourceTrend'), 'ResourceTrend')
 const GPUUtilization = safeLazy(() => import('./GPUUtilization'), 'GPUUtilization')
@@ -75,8 +83,8 @@ const UserManagement = safeLazy(() => import('./UserManagement'), 'UserManagemen
 const ConsoleIssuesCard = safeLazy(() => import('./console-missions/ConsoleIssuesCard'), 'ConsoleIssuesCard')
 const ConsoleKubeconfigAuditCard = safeLazy(() => import('./console-missions/ConsoleKubeconfigAuditCard'), 'ConsoleKubeconfigAuditCard')
 const ConsoleHealthCheckCard = safeLazy(() => import('./console-missions/ConsoleHealthCheckCard'), 'ConsoleHealthCheckCard')
-const ConsoleOfflineDetectionCard = safeLazy(() => import('./console-missions/ConsoleOfflineDetectionCard'), 'ConsoleOfflineDetectionCard')
-const HardwareHealthCard = safeLazy(() => import('./HardwareHealthCard'), 'HardwareHealthCard')
+// ConsoleOfflineDetectionCard eagerly imported above
+// HardwareHealthCard eagerly imported above
 const ProactiveGPUNodeHealthMonitor = safeLazy(() => import('./ProactiveGPUNodeHealthMonitor'), 'ProactiveGPUNodeHealthMonitor')
 // ActiveAlerts — migrated to cardDescriptors.registry.ts (unified descriptor system)
 const AlertRulesCard = safeLazy(() => import('./AlertRules'), 'AlertRulesCard')

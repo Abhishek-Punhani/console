@@ -36,7 +36,8 @@ const DrillDownModal = safeLazy(() => import('./components/drilldown/DrillDownMo
 // "chunk may be stale" error that ChunkErrorBoundary auto-recovers from.
 const Login = safeLazy(() => import('./components/auth/Login'), 'Login')
 const AuthCallback = safeLazy(() => import('./components/auth/AuthCallback'), 'AuthCallback')
-const Dashboard = safeLazy(() => import('./components/dashboard/Dashboard'), 'Dashboard')
+// Dashboard is the landing page — import eagerly to avoid Suspense delay on reload
+import { Dashboard } from './components/dashboard/Dashboard'
 const CustomDashboard = safeLazy(() => import('./components/dashboard/CustomDashboard'), 'CustomDashboard')
 const Settings = safeLazy(() => import('./components/settings/Settings'), 'Settings')
 const Clusters = safeLazy(() => import('./components/clusters/Clusters'), 'Clusters')
