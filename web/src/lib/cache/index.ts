@@ -106,6 +106,41 @@ function getEffectiveInterval(
 }
 
 // ============================================================================
+// Global Auto-Refresh Pause
+// ============================================================================
+
+/**
+ * When true, all cache auto-refresh intervals are suppressed.
+ * Controlled by the dashboard "Auto" checkbox. Manual refetch() calls
+ * and initial data loads still work — only periodic background refreshes
+ * are paused.
+ */
+let globalAutoRefreshPaused = false
+const autoRefreshPauseListeners = new Set<(paused: boolean) => void>()
+
+function notifyAutoRefreshPauseListeners() {
+  autoRefreshPauseListeners.forEach(fn => fn(globalAutoRefreshPaused))
+}
+
+/** Check whether auto-refresh is globally paused. */
+export function isAutoRefreshPaused(): boolean {
+  return globalAutoRefreshPaused
+}
+
+/** Pause or resume all cache auto-refresh intervals. */
+export function setAutoRefreshPaused(paused: boolean): void {
+  if (globalAutoRefreshPaused === paused) return
+  globalAutoRefreshPaused = paused
+  notifyAutoRefreshPauseListeners()
+}
+
+/** Subscribe to auto-refresh pause state changes. Returns unsubscribe fn. */
+export function subscribeAutoRefreshPaused(cb: (paused: boolean) => void): () => void {
+  autoRefreshPauseListeners.add(cb)
+  return () => autoRefreshPauseListeners.delete(cb)
+}
+
+// ============================================================================
 // Types
 // ============================================================================
 
@@ -808,6 +843,11 @@ export function useCache<T>({
   // Subscribe to demo mode - this ensures we re-render when demo mode changes
   const demoMode = useSyncExternalStore(subscribeDemoMode, isDemoMode, isDemoMode)
 
+  // Subscribe to global auto-refresh pause (dashboard "Auto" checkbox)
+  const autoRefreshGloballyPaused = useSyncExternalStore(
+    subscribeAutoRefreshPaused, isAutoRefreshPaused, isAutoRefreshPaused
+  )
+
   // Effective enabled: both the passed prop AND not in demo mode
   // liveInDemoMode bypasses the demo check for cards backed by serverless functions
   const effectiveEnabled = enabled && (!demoMode || liveInDemoMode)
@@ -892,13 +932,14 @@ export function useCache<T>({
     const unregisterRefetch = registerRefetch(`cache:${key}`, refetch)
 
     // Auto-refresh interval
-    // The interval restarts when consecutiveFailures changes (backoff kicks in)
-    if (autoRefresh) {
+    // The interval restarts when consecutiveFailures changes (backoff kicks in).
+    // Suppressed when the dashboard "Auto" checkbox is unchecked (global pause).
+    if (autoRefresh && !autoRefreshGloballyPaused) {
       const intervalId = setInterval(refetch, effectiveInterval)
       return () => { clearInterval(intervalId); unregisterRefetch() }
     }
     return () => unregisterRefetch()
-  }, [effectiveEnabled, autoRefresh, effectiveInterval, refetch, store, key, state.consecutiveFailures])
+  }, [effectiveEnabled, autoRefresh, autoRefreshGloballyPaused, effectiveInterval, refetch, store, key, state.consecutiveFailures])
 
   // Cleanup non-shared stores on unmount
   useEffect(() => {

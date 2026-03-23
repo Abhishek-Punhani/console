@@ -68,6 +68,7 @@ import { DeployConfirmDialog } from '../deploy/DeployConfirmDialog'
 import { DashboardHealthIndicator } from './DashboardHealthIndicator'
 import { useCardGridNavigation } from '../../hooks/useCardGridNavigation'
 import { useModalState } from '../../lib/modals'
+import { setAutoRefreshPaused } from '../../lib/cache'
 
 // Module-level cache for dashboard data (survives navigation)
 interface CachedDashboard {
@@ -222,9 +223,15 @@ export function Dashboard() {
   })
   const autoRefreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Persist auto-refresh setting
+  // Persist auto-refresh setting and propagate to global cache layer.
+  // When the user unchecks "Auto", all card cache intervals are also paused.
   useEffect(() => {
     safeSetItem('dashboard-auto-refresh', String(autoRefresh))
+    setAutoRefreshPaused(!autoRefresh)
+    return () => {
+      // Re-enable auto-refresh when the Dashboard unmounts (e.g., navigating away)
+      setAutoRefreshPaused(false)
+    }
   }, [autoRefresh])
 
   // Auto-refresh interval

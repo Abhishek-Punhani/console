@@ -48,6 +48,7 @@ import { useRefreshIndicator } from '../../hooks/useRefreshIndicator'
 import { DashboardHeader } from '../shared/DashboardHeader'
 import { DashboardHealthIndicator } from './DashboardHealthIndicator'
 import { useDashboardUndoRedo } from '../../hooks/useUndoRedo'
+import { setAutoRefreshPaused } from '../../lib/cache'
 
 interface Card {
   id: string
@@ -316,6 +317,12 @@ export function CustomDashboard() {
   useEffect(() => {
     loadDashboard()
   }, [loadDashboard])
+
+  // Propagate auto-refresh state to global cache layer
+  useEffect(() => {
+    setAutoRefreshPaused(!autoRefresh)
+    return () => { setAutoRefreshPaused(false) }
+  }, [autoRefresh])
 
   // Auto-refresh
   useEffect(() => {

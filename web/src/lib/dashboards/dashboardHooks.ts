@@ -11,6 +11,7 @@ import { arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { dashboardSync } from './dashboardSync'
 import { DashboardCard, DashboardCardPlacement, NewCardInput } from './types'
 import { useDashboardUndoRedo } from '../../hooks/useUndoRedo'
+import { setAutoRefreshPaused } from '../cache'
 
 // Re-export dashboardSync for use in auth context (clear cache on logout)
 export { dashboardSync } from './dashboardSync'
@@ -336,6 +337,13 @@ export function useDashboardAutoRefresh(
   initialEnabled: boolean = true
 ): UseDashboardAutoRefreshResult {
   const [autoRefresh, setAutoRefresh] = useState(initialEnabled)
+
+  // Propagate auto-refresh state to global cache layer so card-level
+  // cache intervals are also paused when the user unchecks "Auto".
+  useEffect(() => {
+    setAutoRefreshPaused(!autoRefresh)
+    return () => { setAutoRefreshPaused(false) }
+  }, [autoRefresh])
 
   useEffect(() => {
     if (!autoRefresh) return
