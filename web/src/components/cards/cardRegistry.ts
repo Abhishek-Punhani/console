@@ -1,3 +1,10 @@
+/**
+ * Card Component Registry — maps card types to lazy-loaded React components.
+ *
+ * Also add new cards to the browse catalog in:
+ *   src/components/dashboard/AddCardModal.tsx → CARD_CATALOG
+ * See src/config/cards/index.ts for the full registration checklist.
+ */
 import { lazy, createElement, ComponentType } from 'react'
 import { safeLazy } from '../../lib/safeLazy'
 import { isDynamicCardRegistered } from '../../lib/dynamic-cards/dynamicCardRegistry'

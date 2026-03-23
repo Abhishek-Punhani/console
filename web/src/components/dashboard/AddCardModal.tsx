@@ -53,7 +53,13 @@ function wrapAbbreviations(text: string): ReactNode {
 
   return parts.length > 0 ? parts : text
 }
-// Card catalog - all available cards organized by category
+/**
+ * CARD_CATALOG — browseable card inventory shown in the "Add Cards" dialog.
+ *
+ * ⚠️  IMPORTANT: When you add a new card to the codebase (config + component),
+ *     you MUST also add it here, otherwise it won't appear in the Browse Cards
+ *     dialog and users won't be able to discover or add it.
+ */
 const CARD_CATALOG = {
   'Cluster Admin': [
     { type: 'control_plane_health', title: 'Control Plane Health', description: 'API server, scheduler, controller manager, etcd status per cluster', visualization: 'status' },
@@ -223,6 +229,7 @@ const CARD_CATALOG = {
     { type: 'fleet_compliance_heatmap', title: 'Fleet Compliance Heatmap', description: 'Cross-cluster compliance grid showing tool status per cluster', visualization: 'status' },
     { type: 'compliance_drift', title: 'Compliance Drift', description: 'Detect clusters deviating from fleet compliance baseline', visualization: 'status' },
     { type: 'cross_cluster_policy_comparison', title: 'Cross-Cluster Policy Comparison', description: 'Compare Kyverno policy deployment across clusters', visualization: 'table' },
+    { type: 'trestle_scan', title: 'Compliance Trestle (OSCAL)', description: 'OSCAL compliance assessment via Compliance Trestle (CNCF Sandbox)', visualization: 'status' },
   ],
   'Data Compliance': [
     { type: 'vault_secrets', title: 'HashiCorp Vault', description: 'Secrets management, dynamic credentials, and encryption-as-a-service', visualization: 'status' },
@@ -242,6 +249,16 @@ const CARD_CATALOG = {
     { type: 'prow_ci_monitor', title: 'Prow CI Monitor', description: 'Monitor Prow CI jobs with stats, failure analysis, and AI repair', visualization: 'table' },
     { type: 'github_ci_monitor', title: 'GitHub CI Monitor', description: 'Monitor GitHub Actions workflows across repos', visualization: 'table' },
     { type: 'cluster_health_monitor', title: 'Cluster Health Monitor', description: 'Monitor cluster health with pod/deployment issue tracking', visualization: 'status' },
+    { type: 'nightly_e2e_status', title: 'Nightly E2E Status', description: 'llm-d nightly E2E workflow status across OCP and GKE platforms', visualization: 'status' },
+  ],
+  'Multi-Cluster Insights': [
+    { type: 'cross_cluster_event_correlation', title: 'Cross-Cluster Event Correlation', description: 'Unified timeline showing correlated warning events across multiple clusters', visualization: 'events' },
+    { type: 'cluster_delta_detector', title: 'Cluster Delta Detector', description: 'Detects differences between clusters sharing the same workloads', visualization: 'table' },
+    { type: 'cascade_impact_map', title: 'Cascade Impact Map', description: 'Visualizes how issues cascade across clusters over time', visualization: 'status' },
+    { type: 'config_drift_heatmap', title: 'Config Drift Heatmap', description: 'Cluster-pair matrix showing degree of configuration drift', visualization: 'status' },
+    { type: 'resource_imbalance_detector', title: 'Resource Imbalance Detector', description: 'Detects CPU/memory utilization skew across the fleet', visualization: 'gauge' },
+    { type: 'restart_correlation_matrix', title: 'Restart Correlation Matrix', description: 'Detects horizontal (app bug) vs vertical (infra issue) restart patterns', visualization: 'table' },
+    { type: 'deployment_rollout_tracker', title: 'Deployment Rollout Tracker', description: 'Tracks deployment rollout progress across clusters', visualization: 'status' },
   ],
   'Arcade': [
     { type: 'kube_man', title: 'Kube-Man', description: 'Classic Pac-Man arcade game - eat dots and avoid ghosts in the cluster maze', visualization: 'status' },
@@ -264,8 +281,8 @@ const CARD_CATALOG = {
     { type: 'kube_snake', title: 'Kube Snake', description: 'Classic Snake game - grow by collecting dots without hitting walls', visualization: 'status' },
     { type: 'kube_galaga', title: 'Kube Galaga', description: 'Space shooter with enemy waves and power-ups', visualization: 'status' },
     { type: 'kube_craft', title: 'KubeCraft 2D', description: '2D Minecraft-style block builder with terrain generation', visualization: 'status' },
-    { type: 'kube_craft_3d', title: 'KubeCraft 3D', description: 'Full 3D Minecraft-style game with first-person controls', visualization: 'status' },
     { type: 'kube_bert', title: 'Kube Bert', description: 'Q*bert-style pyramid hopper — change every tile while dodging enemies', visualization: 'status' },
+    { type: 'missile_command', title: 'Missile Command', description: 'Defend your Kubernetes clusters from incoming missiles', visualization: 'status' },
     { type: 'kube_doom', title: 'Kube Doom', description: 'Raycasting FPS - eliminate rogue CrashPods, OOMKillers, and ZombieDeploys', visualization: 'status' },
     { type: 'pod_crosser', title: 'Pod Crosser', description: 'Frogger-style game - guide your pod across traffic and rivers', visualization: 'status' },
   ],
@@ -341,6 +358,7 @@ const CATEGORY_LOCALE_KEYS: Record<string, string> = {
   'Security Posture': 'securityPosture',
   'Data Compliance': 'dataCompliance',
   'Workload Detection': 'workloadDetection',
+  'Multi-Cluster Insights': 'multiClusterInsights',
   'Arcade': 'arcade',
   'Utilities': 'utilities',
   'Misc': 'misc',

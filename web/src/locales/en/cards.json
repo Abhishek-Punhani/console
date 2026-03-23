@@ -481,6 +481,7 @@
     "securityPosture": "Security Posture",
     "dataCompliance": "Data Compliance",
     "workloadDetection": "Workload Detection",
+    "multiClusterInsights": "Multi-Cluster Insights",
     "arcade": "Arcade",
     "utilities": "Utilities",
     "misc": "Misc",

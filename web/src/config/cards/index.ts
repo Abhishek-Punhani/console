@@ -1,5 +1,14 @@
 /**
- * Card Configuration Registry - Auto-generated
+ * Card Configuration Registry
+ *
+ * Adding a new card? Update ALL of these:
+ *
+ * 1. Create config:       src/config/cards/<card-name>.ts
+ * 2. Register config:     src/config/cards/index.ts          (import + add to CARD_CONFIGS)
+ * 3. Create component:    src/components/cards/<CardName>.tsx
+ * 4. Register component:  src/components/cards/cardRegistry.ts (lazy import + add to CARD_COMPONENTS)
+ * 5. Add to browse catalog: src/components/dashboard/AddCardModal.tsx (add to CARD_CATALOG)
+ *    ↑ WITHOUT THIS the card won't appear in the "Add Cards" browse dialog.
  */
 
 import type { UnifiedCardConfig, CardConfigRegistry } from '../../lib/unified/types'
