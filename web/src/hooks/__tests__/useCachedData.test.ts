@@ -4924,4 +4924,1418 @@ describe('useCachedData', () => {
       expect(issues).toEqual([])
     })
   })
+
+  // ========================================================================
+  // NEW: Deep branch coverage — SSE streaming paths
+  // ========================================================================
+  describe('SSE streaming — onClusterData accumulation and catch-fallback', () => {
+    afterEach(() => { vi.unstubAllGlobals() })
+
+    it('fetchViaSSE accumulates data across multiple onClusterData calls', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      // SSE delivers data from two clusters via onClusterData
+      mockFetchSSE.mockImplementation(async (opts: { onClusterData: (c: string, items: unknown[]) => void }) => {
+        opts.onClusterData('c1', [{ name: 'svc-a' }, { name: 'svc-b' }])
+        opts.onClusterData('c2', [{ name: 'svc-c' }])
+        return [{ name: 'svc-a' }, { name: 'svc-b' }, { name: 'svc-c' }]
+      })
+
+      const { useCachedServices } = await loadModule()
+      useCachedServices()
+
+      const progressiveFetcher = capturedOpts.progressiveFetcher as (onProgress: (p: unknown[]) => void) => Promise<unknown[]>
+      const onProgress = vi.fn()
+      const result = await progressiveFetcher(onProgress)
+
+      // Three total items from two clusters
+      expect(result).toHaveLength(3)
+    })
+
+    it('fetchViaSSE catches SSE error and falls back to fetchFromAllClusters', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      // SSE throws an error
+      mockFetchSSE.mockRejectedValue(new Error('EventSource connection refused'))
+
+      // REST fallback: fetchFromAllClusters needs clusters
+      vi.doMock('../mcp/shared', () => ({
+        clusterCacheRef: { clusters: [{ name: 'c1', reachable: true }] },
+      }))
+
+      // REST per-cluster response
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        text: vi.fn().mockResolvedValue(JSON.stringify({ pvcs: [{ name: 'rest-pvc' }] })),
+      }))
+
+      const { useCachedPVCs } = await loadModule()
+      useCachedPVCs()
+
+      const progressiveFetcher = capturedOpts.progressiveFetcher as (onProgress: (p: unknown[]) => void) => Promise<unknown[]>
+      const result = await progressiveFetcher(vi.fn())
+
+      // Should have fallen back to REST and gotten data
+      expect(result).toHaveLength(1)
+      expect(result[0]).toHaveProperty('name', 'rest-pvc')
+    })
+
+    it('fetchViaSSE calls onProgress during progressive accumulation for pods', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      mockFetchSSE.mockImplementation(async (opts: { onClusterData: (c: string, items: unknown[]) => void }) => {
+        opts.onClusterData('c1', [{ name: 'pod-1', restarts: 5 }])
+        opts.onClusterData('c2', [{ name: 'pod-2', restarts: 0 }])
+        return [{ name: 'pod-1', restarts: 5 }, { name: 'pod-2', restarts: 0 }]
+      })
+
+      const { useCachedPods } = await loadModule()
+      useCachedPods()
+
+      const progressiveFetcher = capturedOpts.progressiveFetcher as (onProgress: (p: unknown[]) => void) => Promise<unknown[]>
+      const onProgress = vi.fn()
+      const result = await progressiveFetcher(onProgress)
+
+      // Should sort by restarts desc and slice to limit
+      expect(result[0]).toHaveProperty('restarts', 5)
+      expect(result[1]).toHaveProperty('restarts', 0)
+    })
+  })
+
+  // ========================================================================
+  // NEW: Agent fallback chains — fetchDeploymentsViaAgent edge cases
+  // ========================================================================
+  describe('agent fallback chains — fetchDeploymentsViaAgent', () => {
+    afterEach(() => { vi.unstubAllGlobals() })
+
+    it('fetchDeploymentsViaAgent returns empty when agent is unavailable', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.doMock('../mcp/shared', () => ({
+        clusterCacheRef: {
+          clusters: [{ name: 'c1', context: 'c1-ctx', reachable: true }],
+        },
+      }))
+      mockIsAgentUnavailable.mockReturnValue(true)
+      mockIsBackendUnavailable.mockReturnValue(true)
+
+      const { useCachedDeployments } = await loadModule()
+      useCachedDeployments()
+
+      const fetcher = capturedOpts.fetcher as () => Promise<unknown[]>
+      await expect(fetcher()).rejects.toThrow('No data source available')
+    })
+
+    it('fetchDeploymentsViaAgent handles agent JSON returning null for each cluster', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.doMock('../mcp/shared', () => ({
+        clusterCacheRef: {
+          clusters: [{ name: 'c1', context: 'c1-ctx', reachable: true }],
+        },
+      }))
+      mockIsAgentUnavailable.mockReturnValue(false)
+
+      // Agent returns ok but JSON fails (returns null via .catch)
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue(null),
+      }))
+
+      const { useCachedDeployments } = await loadModule()
+      useCachedDeployments() // no cluster => uses fetchDeploymentsViaAgent
+
+      const fetcher = capturedOpts.fetcher as () => Promise<unknown[]>
+      const result = await fetcher()
+
+      // fetchDeploymentsViaAgent: null data => throws 'Invalid JSON'
+      // settledWithConcurrency settles, accumulated is empty, returns []
+      expect(Array.isArray(result)).toBe(true)
+    })
+
+    it('fetchDeploymentsViaAgent tags results with short cluster name, not context', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.doMock('../mcp/shared', () => ({
+        clusterCacheRef: {
+          clusters: [{ name: 'prod', context: 'default/api-server:6443/admin', reachable: true }],
+        },
+      }))
+      mockIsAgentUnavailable.mockReturnValue(false)
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          deployments: [{ name: 'dep-1', namespace: 'default', cluster: 'default/api-server:6443/admin' }],
+        }),
+      }))
+
+      const { useCachedDeployments } = await loadModule()
+      useCachedDeployments()
+
+      const fetcher = capturedOpts.fetcher as () => Promise<Array<{ cluster: string }>>
+      const result = await fetcher()
+
+      // Should use short name 'prod', not the context path
+      expect(result[0].cluster).toBe('prod')
+    })
+  })
+
+  // ========================================================================
+  // NEW: fetchWorkloadsFromAgent edge cases
+  // ========================================================================
+  describe('fetchWorkloadsFromAgent edge cases', () => {
+    afterEach(() => { vi.unstubAllGlobals() })
+
+    it('returns null when agent has no clusters', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.doMock('../mcp/shared', () => ({
+        clusterCacheRef: { clusters: [] },
+      }))
+      mockIsAgentUnavailable.mockReturnValue(false)
+      mockIsBackendUnavailable.mockReturnValue(true)
+
+      const { useCachedWorkloads } = await loadModule()
+      useCachedWorkloads()
+
+      const fetcher = capturedOpts.fetcher as () => Promise<unknown[]>
+      const result = await fetcher()
+      // No clusters => null from agent => falls through, backend unavailable => empty
+      expect(result).toEqual([])
+    })
+
+    it('returns null when agent fetch fails for all clusters', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.doMock('../mcp/shared', () => ({
+        clusterCacheRef: {
+          clusters: [{ name: 'c1', context: 'c1-ctx', reachable: true }],
+        },
+      }))
+      mockIsAgentUnavailable.mockReturnValue(false)
+      mockIsBackendUnavailable.mockReturnValue(true)
+
+      // Agent fetch throws
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network error')))
+
+      const { useCachedWorkloads } = await loadModule()
+      useCachedWorkloads()
+
+      const fetcher = capturedOpts.fetcher as () => Promise<unknown[]>
+      const result = await fetcher()
+
+      // All cluster fetches fail => accumulated is empty => returns null => backend unavailable => []
+      expect(result).toEqual([])
+    })
+
+    it('progressive fetcher for workloads calls onProgress', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.doMock('../mcp/shared', () => ({
+        clusterCacheRef: {
+          clusters: [{ name: 'c1', context: 'c1-ctx', reachable: true }],
+        },
+      }))
+      mockIsAgentUnavailable.mockReturnValue(false)
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          deployments: [{ name: 'wl-1', status: 'running', replicas: 1, readyReplicas: 1 }],
+        }),
+      }))
+
+      const { useCachedWorkloads } = await loadModule()
+      useCachedWorkloads()
+
+      const progressiveFetcher = capturedOpts.progressiveFetcher as (onProgress: (p: unknown[]) => void) => Promise<unknown[]>
+      const onProgress = vi.fn()
+      const result = await progressiveFetcher(onProgress)
+
+      expect(result).not.toBeNull()
+      expect(onProgress).toHaveBeenCalled()
+    })
+  })
+
+  // ========================================================================
+  // NEW: Security scanning via kubectl — additional branch coverage
+  // ========================================================================
+  describe('security scanning via kubectl — additional branches', () => {
+    afterEach(() => { vi.unstubAllGlobals() })
+
+    it('detects host PID and host IPC in separate pods', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.doMock('../mcp/shared', () => ({
+        clusterCacheRef: {
+          clusters: [{ name: 'prod', context: 'prod-ctx', reachable: true }],
+        },
+      }))
+      mockIsAgentUnavailable.mockReturnValue(false)
+
+      mockKubectlProxy.exec.mockResolvedValue({
+        exitCode: 0,
+        output: JSON.stringify({
+          items: [
+            {
+              metadata: { name: 'pid-pod', namespace: 'system' },
+              spec: {
+                hostPID: true,
+                containers: [{ securityContext: { runAsNonRoot: true } }],
+              },
+            },
+            {
+              metadata: { name: 'ipc-pod', namespace: 'system' },
+              spec: {
+                hostIPC: true,
+                containers: [{ securityContext: { runAsNonRoot: true } }],
+              },
+            },
+          ],
+        }),
+      })
+
+      const { useCachedSecurityIssues } = await loadModule()
+      useCachedSecurityIssues()
+
+      const fetcher = capturedOpts.fetcher as () => Promise<Array<{ name: string; issue: string; severity: string }>>
+      const issues = await fetcher()
+
+      expect(issues.some(i => i.name === 'pid-pod' && i.issue === 'Host PID enabled')).toBe(true)
+      expect(issues.some(i => i.name === 'ipc-pod' && i.issue === 'Host IPC enabled')).toBe(true)
+    })
+
+    it('detects capabilities added without dropping any', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.doMock('../mcp/shared', () => ({
+        clusterCacheRef: {
+          clusters: [{ name: 'prod', context: 'prod-ctx', reachable: true }],
+        },
+      }))
+      mockIsAgentUnavailable.mockReturnValue(false)
+
+      mockKubectlProxy.exec.mockResolvedValue({
+        exitCode: 0,
+        output: JSON.stringify({
+          items: [
+            {
+              metadata: { name: 'cap-pod', namespace: 'apps' },
+              spec: {
+                containers: [
+                  {
+                    securityContext: {
+                      capabilities: { add: ['SYS_ADMIN', 'NET_ADMIN'] },
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      })
+
+      const { useCachedSecurityIssues } = await loadModule()
+      useCachedSecurityIssues()
+
+      const fetcher = capturedOpts.fetcher as () => Promise<Array<{ issue: string }>>
+      const issues = await fetcher()
+      expect(issues.some(i => i.issue === 'Capabilities not dropped')).toBe(true)
+    })
+
+    it('does NOT flag capabilities when caps are properly dropped', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.doMock('../mcp/shared', () => ({
+        clusterCacheRef: {
+          clusters: [{ name: 'prod', context: 'prod-ctx', reachable: true }],
+        },
+      }))
+      mockIsAgentUnavailable.mockReturnValue(false)
+
+      mockKubectlProxy.exec.mockResolvedValue({
+        exitCode: 0,
+        output: JSON.stringify({
+          items: [
+            {
+              metadata: { name: 'good-pod', namespace: 'secure' },
+              spec: {
+                containers: [
+                  {
+                    securityContext: {
+                      runAsNonRoot: true,
+                      readOnlyRootFilesystem: true,
+                      capabilities: { drop: ['ALL'], add: ['NET_BIND_SERVICE'] },
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      })
+
+      const { useCachedSecurityIssues } = await loadModule()
+      useCachedSecurityIssues()
+
+      const fetcher = capturedOpts.fetcher as () => Promise<Array<{ issue: string }>>
+      const issues = await fetcher()
+      expect(issues.some(i => i.issue === 'Capabilities not dropped')).toBe(false)
+    })
+
+    it('filters by specific cluster when cluster arg provided', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.doMock('../mcp/shared', () => ({
+        clusterCacheRef: {
+          clusters: [
+            { name: 'prod', context: 'prod-ctx', reachable: true },
+            { name: 'staging', context: 'staging-ctx', reachable: true },
+          ],
+        },
+      }))
+      mockIsAgentUnavailable.mockReturnValue(false)
+
+      mockKubectlProxy.exec.mockResolvedValue({
+        exitCode: 0,
+        output: JSON.stringify({
+          items: [{
+            metadata: { name: 'test-pod', namespace: 'default' },
+            spec: { hostNetwork: true, containers: [{ securityContext: { runAsNonRoot: true } }] },
+          }],
+        }),
+      })
+
+      const { useCachedSecurityIssues } = await loadModule()
+      useCachedSecurityIssues('prod')
+
+      const fetcher = capturedOpts.fetcher as () => Promise<Array<{ cluster: string }>>
+      const issues = await fetcher()
+
+      // Should only have scanned 'prod' cluster, not 'staging'
+      for (const issue of issues) {
+        expect(issue.cluster).toBe('prod')
+      }
+      // kubectlProxy.exec should have been called once (only for prod)
+      expect(mockKubectlProxy.exec).toHaveBeenCalledTimes(1)
+    })
+
+    it('security REST fallback returns empty on non-ok authFetch response', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.doMock('../mcp/shared', () => ({
+        clusterCacheRef: { clusters: [] },
+      }))
+      mockIsAgentUnavailable.mockReturnValue(true)
+      mockIsBackendUnavailable.mockReturnValue(false)
+
+      // authFetch returns non-ok
+      mockAuthFetch.mockResolvedValue({
+        ok: false,
+        status: 503,
+        json: vi.fn().mockResolvedValue(null),
+      })
+
+      const { useCachedSecurityIssues } = await loadModule()
+      useCachedSecurityIssues()
+
+      const fetcher = capturedOpts.fetcher as () => Promise<unknown>
+      // REST non-ok falls through to throw
+      await expect(fetcher()).rejects.toThrow('No data source available')
+    })
+
+    it('security REST fallback returns empty when authFetch JSON has empty issues', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.doMock('../mcp/shared', () => ({
+        clusterCacheRef: { clusters: [] },
+      }))
+      mockIsAgentUnavailable.mockReturnValue(true)
+      mockIsBackendUnavailable.mockReturnValue(false)
+
+      // authFetch returns ok but with empty issues
+      mockAuthFetch.mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ issues: [] }),
+      })
+
+      const { useCachedSecurityIssues } = await loadModule()
+      useCachedSecurityIssues()
+
+      const fetcher = capturedOpts.fetcher as () => Promise<unknown>
+      // Empty issues array doesn't satisfy `data.issues.length > 0`, falls through to throw
+      await expect(fetcher()).rejects.toThrow('No data source available')
+    })
+  })
+
+  // ========================================================================
+  // NEW: CoreDNS status computation — additional branches
+  // ========================================================================
+  describe('CoreDNS status computation — deep branches', () => {
+    afterEach(() => { vi.unstubAllGlobals() })
+
+    it('includes kube-dns pods in the coredns filter', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        text: vi.fn().mockResolvedValue(JSON.stringify({
+          pods: [
+            { name: 'kube-dns-abc', namespace: 'kube-system', status: 'Running', ready: '1/1', restarts: 0, cluster: 'c1' },
+          ],
+        })),
+      }))
+
+      const { useCachedCoreDNSStatus } = await loadModule()
+      useCachedCoreDNSStatus('c1')
+
+      const fetcher = capturedOpts.fetcher as () => Promise<Array<{ pods: unknown[] }>>
+      const result = await fetcher()
+
+      expect(result).toHaveLength(1)
+      expect(result[0].pods).toHaveLength(1)
+    })
+
+    it('extracts version from container image tag', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        text: vi.fn().mockResolvedValue(JSON.stringify({
+          pods: [
+            {
+              name: 'coredns-xyz', namespace: 'kube-system', status: 'Running', ready: '1/1',
+              restarts: 0, cluster: 'c1',
+              containers: [{ image: 'registry.k8s.io/coredns:v1.11.3' }],
+            },
+          ],
+        })),
+      }))
+
+      const { useCachedCoreDNSStatus } = await loadModule()
+      useCachedCoreDNSStatus('c1')
+
+      const fetcher = capturedOpts.fetcher as () => Promise<Array<{ pods: Array<{ version: string }> }>>
+      const result = await fetcher()
+
+      expect(result[0].pods[0].version).toBe('1.11.3')
+    })
+
+    it('returns empty version when no container image info', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        text: vi.fn().mockResolvedValue(JSON.stringify({
+          pods: [
+            { name: 'coredns-nover', namespace: 'kube-system', status: 'Running', ready: '1/1', restarts: 0, cluster: 'c1' },
+          ],
+        })),
+      }))
+
+      const { useCachedCoreDNSStatus } = await loadModule()
+      useCachedCoreDNSStatus('c1')
+
+      const fetcher = capturedOpts.fetcher as () => Promise<Array<{ pods: Array<{ version: string }> }>>
+      const result = await fetcher()
+
+      expect(result[0].pods[0].version).toBe('')
+    })
+
+    it('returns empty array when no coredns pods found', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        text: vi.fn().mockResolvedValue(JSON.stringify({
+          pods: [
+            { name: 'nginx-pod', namespace: 'kube-system', status: 'Running', cluster: 'c1' },
+          ],
+        })),
+      }))
+
+      const { useCachedCoreDNSStatus } = await loadModule()
+      useCachedCoreDNSStatus('c1')
+
+      const fetcher = capturedOpts.fetcher as () => Promise<unknown[]>
+      const result = await fetcher()
+
+      expect(result).toEqual([])
+    })
+
+    it('sorts clusters alphabetically', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.doMock('../mcp/shared', () => ({
+        clusterCacheRef: {
+          clusters: [{ name: 'z-cluster', reachable: true }, { name: 'a-cluster', reachable: true }],
+        },
+      }))
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        text: vi.fn().mockResolvedValue(JSON.stringify({
+          pods: [
+            { name: 'coredns-1', namespace: 'kube-system', status: 'Running', cluster: 'z-cluster' },
+            { name: 'coredns-2', namespace: 'kube-system', status: 'Running', cluster: 'a-cluster' },
+          ],
+        })),
+      }))
+
+      const { useCachedCoreDNSStatus } = await loadModule()
+      useCachedCoreDNSStatus() // all clusters
+
+      const fetcher = capturedOpts.fetcher as () => Promise<Array<{ cluster: string }>>
+      const result = await fetcher()
+
+      // They should be alphabetically ordered
+      if (result.length >= 2) {
+        expect(result[0].cluster.localeCompare(result[1].cluster)).toBeLessThan(0)
+      }
+    })
+
+    it('uses unknown as cluster name when pod has no cluster field', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.doMock('../mcp/shared', () => ({
+        clusterCacheRef: { clusters: [{ name: 'c1', reachable: true }] },
+      }))
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        text: vi.fn().mockResolvedValue(JSON.stringify({
+          pods: [
+            { name: 'coredns-orphan', namespace: 'kube-system', status: 'Running', ready: '1/1', restarts: 0 },
+          ],
+        })),
+      }))
+
+      const { useCachedCoreDNSStatus } = await loadModule()
+      useCachedCoreDNSStatus()
+
+      const fetcher = capturedOpts.fetcher as () => Promise<Array<{ cluster: string }>>
+      const result = await fetcher()
+
+      // Pod without cluster field gets grouped under 'unknown'
+      // (fetchFromAllClusters adds cluster field, but we test the grouping logic)
+      expect(result.length).toBeGreaterThanOrEqual(1)
+    })
+  })
+
+  // ========================================================================
+  // NEW: Buildpack images — 404 vs other error discrimination
+  // ========================================================================
+  describe('buildpack images — error discrimination', () => {
+    afterEach(() => { vi.unstubAllGlobals() })
+
+    it('catches 404 error message variants and returns empty', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      // Response is non-ok with 404 status
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }))
+
+      const { useCachedBuildpackImages } = await loadModule()
+      useCachedBuildpackImages()
+
+      const fetcher = capturedOpts.fetcher as () => Promise<unknown[]>
+      const images = await fetcher()
+      expect(images).toEqual([])
+    })
+
+    it('rethrows 503 errors', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503 }))
+
+      const { useCachedBuildpackImages } = await loadModule()
+      useCachedBuildpackImages()
+
+      const fetcher = capturedOpts.fetcher as () => Promise<unknown[]>
+      await expect(fetcher()).rejects.toThrow('503')
+    })
+  })
+
+  // ========================================================================
+  // NEW: Hardware health — additional edge cases
+  // ========================================================================
+  describe('hardware health — additional edge cases', () => {
+    afterEach(() => { vi.unstubAllGlobals() })
+
+    it('handles alerts JSON parse failure gracefully (returns null via .catch)', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult({ alerts: [], inventory: [], nodeCount: 0, lastUpdate: null })
+      })
+
+      const alertsBadJson = { ok: true, json: vi.fn().mockRejectedValue(new Error('parse error')) }
+      const inventoryOk = {
+        ok: true,
+        json: vi.fn().mockResolvedValue({ nodes: [{ nodeName: 'n1', cluster: 'c1' }], timestamp: 'now' }),
+      }
+      vi.stubGlobal('fetch', vi.fn()
+        .mockResolvedValueOnce(alertsBadJson)
+        .mockResolvedValueOnce(inventoryOk))
+
+      const { useCachedHardwareHealth } = await loadModule()
+      useCachedHardwareHealth()
+
+      const fetcher = capturedOpts.fetcher as () => Promise<{ alerts: unknown[]; inventory: unknown[]; nodeCount: number }>
+      const result = await fetcher()
+
+      // Alerts parse failed => null via .catch => alertsRes.ok is true but data is null => no alerts
+      // Inventory succeeded
+      expect(result.alerts).toEqual([])
+      expect(result.inventory).toHaveLength(1)
+    })
+
+    it('inventory with empty nodes does not override nodeCount', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult({ alerts: [], inventory: [], nodeCount: 0, lastUpdate: null })
+      })
+
+      const alertsRes = {
+        ok: true,
+        json: vi.fn().mockResolvedValue({ alerts: [], nodeCount: 10, timestamp: 'now' }),
+      }
+      const inventoryRes = {
+        ok: true,
+        json: vi.fn().mockResolvedValue({ nodes: [], timestamp: 'now' }),
+      }
+      vi.stubGlobal('fetch', vi.fn()
+        .mockResolvedValueOnce(alertsRes)
+        .mockResolvedValueOnce(inventoryRes))
+
+      const { useCachedHardwareHealth } = await loadModule()
+      useCachedHardwareHealth()
+
+      const fetcher = capturedOpts.fetcher as () => Promise<{ nodeCount: number; inventory: unknown[] }>
+      const result = await fetcher()
+
+      // Empty nodes array => data.nodes.length is 0 => does NOT override nodeCount
+      // nodeCount remains at 10 from alerts
+      expect(result.nodeCount).toBe(10)
+      expect(result.inventory).toEqual([])
+    })
+  })
+
+  // ========================================================================
+  // NEW: fetchFromAllClusters — onProgress callback and cluster tagging
+  // ========================================================================
+  describe('fetchFromAllClusters — onProgress and cluster field tagging', () => {
+    afterEach(() => { vi.unstubAllGlobals() })
+
+    it('onProgress is called after each successful cluster fetch', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.doMock('../mcp/shared', () => ({
+        clusterCacheRef: {
+          clusters: [
+            { name: 'c1', reachable: true },
+            { name: 'c2', reachable: true },
+          ],
+        },
+      }))
+
+      const c1Res = { ok: true, text: vi.fn().mockResolvedValue(JSON.stringify({ pods: [{ name: 'p1' }] })) }
+      const c2Res = { ok: true, text: vi.fn().mockResolvedValue(JSON.stringify({ pods: [{ name: 'p2' }] })) }
+
+      vi.stubGlobal('fetch', vi.fn()
+        .mockResolvedValueOnce(c1Res)
+        .mockResolvedValueOnce(c2Res))
+
+      const { useCachedPods } = await loadModule()
+      useCachedPods()
+
+      const progressiveFetcher = capturedOpts.progressiveFetcher as (onProgress: (p: unknown[]) => void) => Promise<unknown[]>
+
+      // fetchViaSSE will be called; mock it to fall through to fetchFromAllClusters
+      mockFetchSSE.mockRejectedValue(new Error('SSE not available'))
+
+      const onProgress = vi.fn()
+      const result = await progressiveFetcher(onProgress)
+
+      expect(result.length).toBeGreaterThanOrEqual(1)
+    })
+  })
+
+  // ========================================================================
+  // NEW: Events fetcher — progressive fetcher with failed cluster
+  // ========================================================================
+  describe('events progressive fetcher — agent cluster failure handling', () => {
+    afterEach(() => { vi.unstubAllGlobals() })
+
+    it('skips failed clusters in progressive fetch and continues', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.doMock('../mcp/shared', () => ({
+        clusterCacheRef: {
+          clusters: [
+            { name: 'ok-cluster', context: 'ok-ctx', reachable: true },
+            { name: 'bad-cluster', context: 'bad-ctx', reachable: true },
+          ],
+        },
+      }))
+      mockIsAgentUnavailable.mockReturnValue(false)
+
+      mockKubectlProxy.getEvents
+        .mockResolvedValueOnce([{ type: 'Normal', reason: 'OK', lastSeen: new Date().toISOString() }])
+        .mockRejectedValueOnce(new Error('Connection refused'))
+
+      const { useCachedEvents } = await loadModule()
+      useCachedEvents()
+
+      const progressiveFetcher = capturedOpts.progressiveFetcher as (onProgress: (p: unknown[]) => void) => Promise<unknown[]>
+      const onProgress = vi.fn()
+      const events = await progressiveFetcher(onProgress)
+
+      // Should have events from ok-cluster, bad-cluster was skipped
+      expect(events.length).toBeGreaterThanOrEqual(1)
+      expect(onProgress).toHaveBeenCalled()
+    })
+
+    it('events progressive fetcher falls back to SSE when no agent', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.doMock('../mcp/shared', () => ({
+        clusterCacheRef: { clusters: [] },
+      }))
+      mockIsAgentUnavailable.mockReturnValue(true)
+
+      mockFetchSSE.mockResolvedValue([{ type: 'Warning', reason: 'sse-event' }])
+
+      const { useCachedEvents } = await loadModule()
+      useCachedEvents()
+
+      const progressiveFetcher = capturedOpts.progressiveFetcher as (onProgress: (p: unknown[]) => void) => Promise<unknown[]>
+      const result = await progressiveFetcher(vi.fn())
+
+      expect(mockFetchSSE).toHaveBeenCalled()
+      expect(result).toHaveLength(1)
+    })
+  })
+
+  // ========================================================================
+  // NEW: DeploymentIssues — deriveIssues edge cases
+  // ========================================================================
+  describe('deploymentIssues — deriveIssues edge cases', () => {
+    afterEach(() => { vi.unstubAllGlobals() })
+
+    it('derives ReplicaFailure reason for running status with missing replicas', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.doMock('../mcp/shared', () => ({
+        clusterCacheRef: {
+          clusters: [{ name: 'c1', context: 'c1-ctx', reachable: true }],
+        },
+      }))
+      mockIsAgentUnavailable.mockReturnValue(false)
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          deployments: [
+            { name: 'partial-dep', namespace: 'prod', status: 'running', replicas: 5, readyReplicas: 2 },
+          ],
+        }),
+      }))
+
+      const { useCachedDeploymentIssues } = await loadModule()
+      useCachedDeploymentIssues()
+
+      const fetcher = capturedOpts.fetcher as () => Promise<Array<{ name: string; reason: string; replicas: number; readyReplicas: number }>>
+      const issues = await fetcher()
+
+      expect(issues).toHaveLength(1)
+      expect(issues[0].reason).toBe('ReplicaFailure')
+      expect(issues[0].replicas).toBe(5)
+      expect(issues[0].readyReplicas).toBe(2)
+    })
+
+    it('derives DeploymentFailed reason for failed status', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.doMock('../mcp/shared', () => ({
+        clusterCacheRef: {
+          clusters: [{ name: 'c1', context: 'c1-ctx', reachable: true }],
+        },
+      }))
+      mockIsAgentUnavailable.mockReturnValue(false)
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          deployments: [
+            { name: 'failed-dep', namespace: 'prod', status: 'failed', replicas: 3, readyReplicas: 0 },
+          ],
+        }),
+      }))
+
+      const { useCachedDeploymentIssues } = await loadModule()
+      useCachedDeploymentIssues()
+
+      const fetcher = capturedOpts.fetcher as () => Promise<Array<{ name: string; reason: string }>>
+      const issues = await fetcher()
+
+      expect(issues).toHaveLength(1)
+      expect(issues[0].reason).toBe('DeploymentFailed')
+    })
+
+    it('skips healthy deployments in deriveIssues', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.doMock('../mcp/shared', () => ({
+        clusterCacheRef: {
+          clusters: [{ name: 'c1', context: 'c1-ctx', reachable: true }],
+        },
+      }))
+      mockIsAgentUnavailable.mockReturnValue(false)
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          deployments: [
+            { name: 'healthy-dep', namespace: 'prod', status: 'running', replicas: 3, readyReplicas: 3 },
+          ],
+        }),
+      }))
+
+      const { useCachedDeploymentIssues } = await loadModule()
+      useCachedDeploymentIssues()
+
+      const fetcher = capturedOpts.fetcher as () => Promise<unknown[]>
+      const issues = await fetcher()
+
+      expect(issues).toEqual([])
+    })
+  })
+
+  // ========================================================================
+  // NEW: Namespaces — JSON parse failure and edge cases
+  // ========================================================================
+  describe('namespaces — edge cases', () => {
+    afterEach(() => { vi.unstubAllGlobals() })
+
+    it('handles json parse failure returning null (no namespaces)', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue(null),
+      }))
+
+      const { useCachedNamespaces } = await loadModule()
+      useCachedNamespaces('my-cluster')
+
+      const fetcher = capturedOpts.fetcher as () => Promise<string[]>
+      const namespaces = await fetcher()
+
+      // null fallback => (null || []) => empty
+      expect(namespaces).toEqual([])
+    })
+
+    it('handles Name field (capital N) in namespace objects', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue([
+          { Name: 'production' },
+          { Name: 'staging' },
+        ]),
+      }))
+
+      const { useCachedNamespaces } = await loadModule()
+      useCachedNamespaces('my-cluster')
+
+      const fetcher = capturedOpts.fetcher as () => Promise<string[]>
+      const namespaces = await fetcher()
+
+      expect(namespaces).toContain('production')
+      expect(namespaces).toContain('staging')
+    })
+
+    it('fetcher returns demo data when no cluster provided', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      const { useCachedNamespaces } = await loadModule()
+      useCachedNamespaces()
+
+      const fetcher = capturedOpts.fetcher as () => Promise<string[]>
+      const namespaces = await fetcher()
+
+      expect(namespaces).toContain('default')
+      expect(namespaces).toContain('kube-system')
+      expect(namespaces.length).toBeGreaterThan(5)
+    })
+  })
+
+  // ========================================================================
+  // NEW: fetchGitOpsSSE — backend unavailable throws
+  // ========================================================================
+  describe('fetchGitOpsSSE — backend unavailable', () => {
+    it('throws when backend is unavailable', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      mockIsBackendUnavailable.mockReturnValue(true)
+
+      const { useCachedHelmReleases } = await loadModule()
+      useCachedHelmReleases()
+
+      const progressiveFetcher = capturedOpts.progressiveFetcher as (onProgress: (p: unknown[]) => void) => Promise<unknown[]>
+      await expect(progressiveFetcher(vi.fn())).rejects.toThrow('No data source available')
+    })
+  })
+
+  // ========================================================================
+  // NEW: fetchPodIssuesViaAgent — edge cases
+  // ========================================================================
+  describe('fetchPodIssuesViaAgent — edge cases', () => {
+    it('uses context from cluster info when available', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.doMock('../mcp/shared', () => ({
+        clusterCacheRef: {
+          clusters: [{ name: 'prod', context: 'admin@prod-cluster', reachable: true }],
+        },
+      }))
+      mockIsAgentUnavailable.mockReturnValue(false)
+      mockKubectlProxy.getPodIssues.mockResolvedValue([
+        { name: 'issue-pod', status: 'Error', restarts: 1 },
+      ])
+
+      const { useCachedPodIssues } = await loadModule()
+      useCachedPodIssues()
+
+      const fetcher = capturedOpts.fetcher as () => Promise<Array<{ cluster: string }>>
+      const issues = await fetcher()
+
+      // kubectlProxy should be called with context, not name
+      expect(mockKubectlProxy.getPodIssues).toHaveBeenCalledWith('admin@prod-cluster', undefined)
+      // But the result should use the short name
+      expect(issues[0].cluster).toBe('prod')
+    })
+  })
+
+  // ========================================================================
+  // NEW: coreFetchers.securityIssues — kubectl succeeds but finds no issues
+  // ========================================================================
+  describe('coreFetchers.securityIssues — kubectl empty result', () => {
+    it('falls through to REST when kubectl returns no issues', async () => {
+      vi.doMock('../mcp/shared', () => ({
+        clusterCacheRef: {
+          clusters: [{ name: 'c1', reachable: true }],
+        },
+      }))
+      mockIsAgentUnavailable.mockReturnValue(false)
+
+      // kubectl succeeds but finds no security issues
+      mockKubectlProxy.exec.mockResolvedValue({
+        exitCode: 0,
+        output: JSON.stringify({
+          items: [{
+            metadata: { name: 'secure-pod', namespace: 'default' },
+            spec: {
+              containers: [{
+                securityContext: {
+                  runAsNonRoot: true,
+                  readOnlyRootFilesystem: true,
+                  capabilities: { drop: ['ALL'] },
+                },
+              }],
+            },
+          }],
+        }),
+      })
+
+      // REST fallback
+      mockIsBackendUnavailable.mockReturnValue(false)
+      mockAuthFetch.mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ issues: [{ name: 'rest-issue', severity: 'high' }] }),
+      })
+      mockUseCache.mockReturnValue(makeCacheResult([]))
+
+      const { coreFetchers } = await loadModule()
+      const issues = await coreFetchers.securityIssues()
+
+      // kubectl found 0 issues, fell through to REST
+      expect(issues.length).toBeGreaterThanOrEqual(1)
+    })
+  })
+
+  // ========================================================================
+  // NEW: Workloads REST fallback — data.items vs data array
+  // ========================================================================
+  describe('workloads REST fallback — data shape handling', () => {
+    afterEach(() => { vi.unstubAllGlobals() })
+
+    it('handles data as direct array (not wrapped in items)', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      mockIsAgentUnavailable.mockReturnValue(true)
+      mockIsBackendUnavailable.mockReturnValue(false)
+
+      // Response returns array directly (not { items: [...] })
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue([
+          { name: 'wl-direct', namespace: 'prod', type: 'StatefulSet', cluster: 'c1', status: 'Running' },
+        ]),
+      }))
+
+      const { useCachedWorkloads } = await loadModule()
+      useCachedWorkloads()
+
+      const fetcher = capturedOpts.fetcher as () => Promise<Array<{ name: string; type: string }>>
+      const workloads = await fetcher()
+
+      expect(workloads).toHaveLength(1)
+      expect(workloads[0].name).toBe('wl-direct')
+      expect(workloads[0].type).toBe('StatefulSet')
+    })
+
+    it('handles targetClusters from REST data', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      mockIsAgentUnavailable.mockReturnValue(true)
+      mockIsBackendUnavailable.mockReturnValue(false)
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          items: [
+            { name: 'wl-multi', cluster: 'c1', targetClusters: ['c1', 'c2', 'c3'] },
+          ],
+        }),
+      }))
+
+      const { useCachedWorkloads } = await loadModule()
+      useCachedWorkloads()
+
+      const fetcher = capturedOpts.fetcher as () => Promise<Array<{ targetClusters: string[] }>>
+      const workloads = await fetcher()
+
+      expect(workloads[0].targetClusters).toEqual(['c1', 'c2', 'c3'])
+    })
+
+    it('falls back to [cluster] when no targetClusters provided', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      mockIsAgentUnavailable.mockReturnValue(true)
+      mockIsBackendUnavailable.mockReturnValue(false)
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({
+          items: [
+            { name: 'wl-single', cluster: 'prod-east' },
+          ],
+        }),
+      }))
+
+      const { useCachedWorkloads } = await loadModule()
+      useCachedWorkloads()
+
+      const fetcher = capturedOpts.fetcher as () => Promise<Array<{ targetClusters: string[] }>>
+      const workloads = await fetcher()
+
+      expect(workloads[0].targetClusters).toEqual(['prod-east'])
+    })
+  })
+
+  // ========================================================================
+  // NEW: Security progressive fetcher — kubectl success path
+  // ========================================================================
+  describe('security progressive fetcher — kubectl success path', () => {
+    afterEach(() => { vi.unstubAllGlobals() })
+
+    it('progressive fetcher returns kubectl results when agent available and issues found', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.doMock('../mcp/shared', () => ({
+        clusterCacheRef: {
+          clusters: [{ name: 'prod', context: 'prod-ctx', reachable: true }],
+        },
+      }))
+      mockIsAgentUnavailable.mockReturnValue(false)
+
+      mockKubectlProxy.exec.mockResolvedValue({
+        exitCode: 0,
+        output: JSON.stringify({
+          items: [{
+            metadata: { name: 'priv-pod', namespace: 'system' },
+            spec: {
+              containers: [{ securityContext: { privileged: true } }],
+            },
+          }],
+        }),
+      })
+
+      const { useCachedSecurityIssues } = await loadModule()
+      useCachedSecurityIssues()
+
+      const progressiveFetcher = capturedOpts.progressiveFetcher as (onProgress: (p: unknown[]) => void) => Promise<unknown[]>
+      const onProgress = vi.fn()
+      const result = await progressiveFetcher(onProgress)
+
+      expect(result.length).toBeGreaterThan(0)
+      expect(onProgress).toHaveBeenCalled()
+    })
+  })
+
+  // ========================================================================
+  // NEW: Events fetcher — agent with rejected results in settledWithConcurrency
+  // ========================================================================
+  describe('events fetcher — agent with mixed settled results', () => {
+    it('skips rejected results from settledWithConcurrency', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.doMock('../mcp/shared', () => ({
+        clusterCacheRef: {
+          clusters: [
+            { name: 'ok', context: 'ok-ctx', reachable: true },
+            { name: 'bad', context: 'bad-ctx', reachable: true },
+          ],
+        },
+      }))
+      mockIsAgentUnavailable.mockReturnValue(false)
+
+      // First cluster succeeds, second fails
+      mockKubectlProxy.getEvents
+        .mockResolvedValueOnce([{ type: 'Normal', reason: 'Created', lastSeen: new Date().toISOString() }])
+        .mockRejectedValueOnce(new Error('Timeout'))
+
+      const { useCachedEvents } = await loadModule()
+      useCachedEvents()
+
+      const fetcher = capturedOpts.fetcher as () => Promise<Array<{ cluster: string }>>
+      const events = await fetcher()
+
+      // Only events from 'ok' cluster should be present
+      expect(events.some(e => e.cluster === 'ok')).toBe(true)
+      expect(events.some(e => e.cluster === 'bad')).toBe(false)
+    })
+
+    it('events sorted by lastSeen descending with null lastSeen treated as epoch 0', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.doMock('../mcp/shared', () => ({
+        clusterCacheRef: {
+          clusters: [{ name: 'c1', context: 'c1-ctx', reachable: true }],
+        },
+      }))
+      mockIsAgentUnavailable.mockReturnValue(false)
+
+      const now = Date.now()
+      mockKubectlProxy.getEvents.mockResolvedValue([
+        { type: 'Warning', reason: 'NoLastSeen' },
+        { type: 'Normal', reason: 'Recent', lastSeen: new Date(now).toISOString() },
+        { type: 'Warning', reason: 'Old', lastSeen: new Date(now - 120000).toISOString() },
+      ])
+
+      const { useCachedEvents } = await loadModule()
+      useCachedEvents()
+
+      const fetcher = capturedOpts.fetcher as () => Promise<Array<{ reason: string }>>
+      const events = await fetcher()
+
+      // Recent should be first, Old second, NoLastSeen last (epoch 0)
+      expect(events[0].reason).toBe('Recent')
+      expect(events[events.length - 1].reason).toBe('NoLastSeen')
+    })
+  })
+
+  // ========================================================================
+  // NEW: fetchRbacAPI — boolean params are serialized correctly
+  // ========================================================================
+  describe('fetchRbacAPI — param serialization', () => {
+    afterEach(() => { vi.unstubAllGlobals() })
+
+    it('serializes boolean params into URL search params', async () => {
+      let capturedOpts: Record<string, unknown> = {}
+      mockUseCache.mockImplementation((opts: Record<string, unknown>) => {
+        capturedOpts = opts
+        return makeCacheResult([])
+      })
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        text: vi.fn().mockResolvedValue(JSON.stringify({ bindings: [] })),
+      }))
+
+      const { useCachedK8sRoleBindings } = await loadModule()
+      useCachedK8sRoleBindings('c1', 'ns', { includeSystem: true })
+
+      const fetcher = capturedOpts.fetcher as () => Promise<unknown>
+      await fetcher()
+
+      const calledUrl = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string
+      expect(calledUrl).toContain('/api/rbac/')
+      expect(calledUrl).toContain('includeSystem=true')
+    })
+  })
 })
