@@ -8,7 +8,10 @@ vi.mock('sucrase', () => ({
   })),
 }))
 
-// Mock getDynamicScope to provide a minimal sandbox
+// Mock getDynamicScope to provide a minimal sandbox.
+// We must include 'eval' and 'Function' in the scope so they are NOT
+// added as parameter names in `new Function(...)`. Using reserved words
+// as parameters in strict mode causes a SyntaxError.
 vi.mock('../scope', () => ({
   getDynamicScope: () => {
     const React = {
@@ -36,6 +39,11 @@ vi.mock('../scope', () => ({
       clearTimeout: vi.fn(),
       setInterval: vi.fn(),
       clearInterval: vi.fn(),
+      // Reserved words that cannot be used as function parameter names
+      // in strict mode — must be in scope to prevent BLOCKED_GLOBALS from
+      // adding them as parameter names to new Function().
+      eval: undefined,
+      Function: undefined,
       __timerCleanup: cleanupFn,
     }
   },
