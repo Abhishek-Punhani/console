@@ -22,7 +22,8 @@ import { useDiagnoseRepairLoop } from '../useDiagnoseRepairLoop'
 describe('useDiagnoseRepairLoop', () => {
   it('returns expected shape', () => {
     const { result } = renderHook(() => useDiagnoseRepairLoop({ monitorType: 'pod-crash' }))
-    expect(result.current).toHaveProperty('isRunning')
-    expect(result.current.isRunning).toBe(false)
+    expect(result.current).toHaveProperty('state')
+    expect(result.current).toHaveProperty('startDiagnose')
+    expect(result.current).toHaveProperty('reset')
   })
 })
