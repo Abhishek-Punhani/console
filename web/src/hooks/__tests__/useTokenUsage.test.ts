@@ -1,20 +1,25 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 
 // ---------------------------------------------------------------------------
 // Track mock state for dynamic control within tests
+// vi.hoisted() ensures variables are declared before vi.mock factories run
 // ---------------------------------------------------------------------------
-let mockDemoMode = false
-let mockAgentUnavailable = true
+const { mockGetDemoMode, mockIsAgentUnavailable, mockReportAgentDataSuccess, mockReportAgentDataError } = vi.hoisted(() => ({
+  mockGetDemoMode: vi.fn(() => false),
+  mockIsAgentUnavailable: vi.fn(() => true),
+  mockReportAgentDataSuccess: vi.fn(),
+  mockReportAgentDataError: vi.fn(),
+}))
 
 vi.mock('../useLocalAgent', () => ({
-  isAgentUnavailable: vi.fn(() => mockAgentUnavailable),
-  reportAgentDataSuccess: vi.fn(),
-  reportAgentDataError: vi.fn(),
+  isAgentUnavailable: mockIsAgentUnavailable,
+  reportAgentDataSuccess: mockReportAgentDataSuccess,
+  reportAgentDataError: mockReportAgentDataError,
 }))
 
 vi.mock('../useDemoMode', () => ({
-  getDemoMode: vi.fn(() => mockDemoMode),
+  getDemoMode: mockGetDemoMode,
 }))
 
 vi.mock('../../lib/constants', () => ({
@@ -32,8 +37,8 @@ describe('useTokenUsage', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.clearAllMocks()
-    mockDemoMode = false
-    mockAgentUnavailable = true
+    mockGetDemoMode.mockReturnValue(false)
+    mockIsAgentUnavailable.mockReturnValue(true)
   })
 
   it('returns initial token usage state', () => {

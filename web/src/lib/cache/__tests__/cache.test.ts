@@ -2562,13 +2562,19 @@ describe('cache module', () => {
         })
       )
 
-      // During loading, optimistic demo should show demoData
+      // Flush microtasks so store.fetch() progresses past storageLoadPromise
+      // and actually calls the fetcher (assigning resolveFetch).
+      await act(async () => { await Promise.resolve() })
+
+      // During loading (fetcher still pending), optimistic demo shows demoData
       expect(result.current.isDemoFallback).toBe(true)
       expect(result.current.data).toEqual(demoItems)
       expect(result.current.isRefreshing).toBe(true)
 
-      // Resolve with real data
+      // Resolve with real data and flush remaining async work (saveToStorage)
       await act(async () => { resolveFetch!([{ name: 'real-agent' }]) })
+      // Allow saveToStorage microtasks to settle
+      await act(async () => { await Promise.resolve() })
       expect(result.current.data).toEqual([{ name: 'real-agent' }])
       expect(result.current.isDemoFallback).toBe(false)
     })
