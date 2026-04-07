@@ -9,11 +9,22 @@ import { useUniversalStats, createMergedStatValueGetter } from '../../hooks/useU
 import { StatBlockValue } from '../ui/StatsOverview'
 import { DashboardPage } from '../../lib/dashboards/DashboardPage'
 import { getDefaultCards } from '../../config/dashboards'
+import { ensureCardInDashboard } from '../../lib/dashboards/migrateStorageKey'
 import { RotatingTip } from '../ui/RotatingTip'
 import { ROUTES } from '../../config/routes'
 import { useTranslation } from 'react-i18next'
 
 const COMPUTE_CARDS_KEY = 'kubestellar-compute-cards'
+
+// Ensure new virtualization cards are present in existing saved layouts
+ensureCardInDashboard(COMPUTE_CARDS_KEY, 'vcluster_status', {
+  id: 'compute-6',
+  cardType: 'vcluster_status',
+  position: { w: 6, h: 3, x: 0, y: 6 } })
+ensureCardInDashboard(COMPUTE_CARDS_KEY, 'kubevirt_status', {
+  id: 'compute-7',
+  cardType: 'kubevirt_status',
+  position: { w: 6, h: 3, x: 6, y: 6 } })
 
 // Default cards for the compute dashboard
 const DEFAULT_COMPUTE_CARDS = getDefaultCards('compute')
