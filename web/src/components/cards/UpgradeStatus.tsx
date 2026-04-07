@@ -395,8 +395,11 @@ export function UpgradeStatus({ config: _config }: UpgradeStatusProps) {
   }, [agentConnected])
 
   // Populate demo versions when in demo mode
+  const demoVersionsSetRef = useRef(false)
   useEffect(() => {
     if (!isDemoMode || allClusters.length === 0) return
+    if (demoVersionsSetRef.current) return
+    demoVersionsSetRef.current = true
     const demoVersions: Record<string, string> = {}
     for (const c of allClusters) {
       demoVersions[c.name] = getDemoVersionForCluster(c.name)

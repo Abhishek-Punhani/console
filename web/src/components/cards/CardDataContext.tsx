@@ -93,9 +93,13 @@ export function useForceLive(): boolean {
 export function useReportCardDataState(state: CardDataState) {
   const { isFailed, consecutiveFailures, errorMessage, isLoading, isRefreshing, hasData, isDemoData, lastUpdated } = state
   const ctx = use(CardDataReportContext)
-  // useLayoutEffect runs synchronously before paint, ensuring cached data
-  // is reported before CardWrapper decides to show skeleton
+  // Use a ref to track previous values and skip no-op reports that would
+  // otherwise cause infinite re-render loops (React 19 strict mode)
+  const prevRef = useRef('')
   useLayoutEffect(() => {
+    const fp = `${isFailed}:${consecutiveFailures}:${errorMessage}:${isLoading}:${isRefreshing}:${hasData}:${isDemoData}:${lastUpdated?.getTime?.() ?? 0}`
+    if (fp === prevRef.current) return
+    prevRef.current = fp
     ctx.report({ isFailed, consecutiveFailures, errorMessage, isLoading, isRefreshing, hasData, isDemoData, lastUpdated })
   }, [ctx, isFailed, consecutiveFailures, errorMessage, isLoading, isRefreshing, hasData, isDemoData, lastUpdated])
 }

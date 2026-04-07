@@ -5,7 +5,7 @@
  * into the main chunk.  This component renders nothing visible.
  */
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useGPUNodes, usePodIssues, useClusters } from '../hooks/useMCP'
 
 export interface AlertsMCPData {
@@ -25,14 +25,23 @@ export default function AlertsDataFetcher({ onData }: Props) {
   const { issues: podIssues, isLoading: isPodIssuesLoading, error: podIssuesError } = usePodIssues()
   const { deduplicatedClusters: clusters, isLoading: isClustersLoading, error: clustersError } = useClusters()
 
+  // Use ref to prevent infinite loop: onData triggers parent re-render which
+  // re-renders this component with new array references from hooks
+  const prevRef = useRef<string>('')
   useEffect(() => {
+    const isLoading = isGPULoading || isPodIssuesLoading || isClustersLoading
     const errors = [gpuError, podIssuesError, clustersError].filter(Boolean)
+    const errorStr = errors.length > 0 ? (errors || []).join('; ') : null
+    // Fingerprint to skip no-op updates
+    const fp = `${(gpuNodes||[]).length}:${(podIssues||[]).length}:${(clusters||[]).length}:${isLoading}:${errorStr}`
+    if (fp === prevRef.current) return
+    prevRef.current = fp
     onData({
       gpuNodes: gpuNodes || [],
       podIssues: podIssues || [],
       clusters: clusters || [],
-      isLoading: isGPULoading || isPodIssuesLoading || isClustersLoading,
-      error: errors.length > 0 ? (errors || []).join('; ') : null,
+      isLoading,
+      error: errorStr,
     })
   // eslint-disable-next-line react-hooks/exhaustive-deps — onData is stable (useState setter)
   }, [gpuNodes, podIssues, clusters, isGPULoading, isPodIssuesLoading, isClustersLoading, gpuError, podIssuesError, clustersError])

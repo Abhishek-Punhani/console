@@ -10,8 +10,10 @@ import { MCP_HOOK_TIMEOUT_MS, SHORT_DELAY_MS, FOCUS_DELAY_MS } from '../../lib/c
 import type { HelmRelease, HelmHistoryEntry } from './types'
 
 // Demo Helm releases shown when in demo mode
+let _cachedDemoReleases: HelmRelease[] | null = null
 function getDemoHelmReleases(): HelmRelease[] {
-  return [
+  if (_cachedDemoReleases) return _cachedDemoReleases
+  _cachedDemoReleases = [
     { name: 'prometheus', namespace: 'monitoring', revision: '5', updated: new Date(Date.now() - 2 * 3600000).toISOString(), status: 'deployed', chart: 'prometheus-25.8.0', app_version: '2.48.1', cluster: 'eks-prod-us-east-1' },
     { name: 'grafana', namespace: 'monitoring', revision: '3', updated: new Date(Date.now() - 5 * 3600000).toISOString(), status: 'deployed', chart: 'grafana-7.0.11', app_version: '10.2.3', cluster: 'eks-prod-us-east-1' },
     { name: 'nginx-ingress', namespace: 'ingress', revision: '8', updated: new Date(Date.now() - 24 * 3600000).toISOString(), status: 'deployed', chart: 'ingress-nginx-4.8.3', app_version: '1.9.4', cluster: 'eks-prod-us-east-1' },
@@ -21,6 +23,7 @@ function getDemoHelmReleases(): HelmRelease[] {
     { name: 'elasticsearch', namespace: 'logging', revision: '3', updated: new Date(Date.now() - 48 * 3600000).toISOString(), status: 'deployed', chart: 'elasticsearch-8.5.1', app_version: '8.11.1', cluster: 'vllm-gpu-cluster' },
     { name: 'vault', namespace: 'security', revision: '2', updated: new Date(Date.now() - 168 * 3600000).toISOString(), status: 'deployed', chart: 'vault-0.27.0', app_version: '1.15.4', cluster: 'vllm-gpu-cluster' },
   ]
+  return _cachedDemoReleases
 }
 
 // Demo Helm history entries for a release
@@ -177,16 +180,8 @@ export function useHelmReleases(cluster?: string) {
         setReleases(demoReleases)
         setLastRefresh(Date.now())
         setIsLoading(false)
-        if (!silent) {
-          setIsRefreshing(true)
-          setTimeout(() => {
-            setIsRefreshing(false)
-            notifyListeners(false)
-          }, MIN_REFRESH_INDICATOR_MS)
-        } else {
-          setIsRefreshing(false)
-          notifyListeners(false)
-        }
+        setIsRefreshing(false)
+        notifyListeners(false)
         return
       }
 

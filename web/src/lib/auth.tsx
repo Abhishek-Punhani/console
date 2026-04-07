@@ -411,9 +411,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // lands on the dashboard immediately (same UX as console.kubestellar.io)
   // instead of flashing through the login page.
   const authInitRef = useRef(false)
+  const authRunCount = useRef(0)
   useEffect(() => {
+    authRunCount.current++
+    if (authRunCount.current > 3) {
+      console.error('[AUTH DEBUG] refreshUser effect fired', authRunCount.current, 'times — likely infinite loop. authInitRef:', authInitRef.current)
+      return
+    }
     if (authInitRef.current) return
     authInitRef.current = true
+    console.log('[AUTH DEBUG] running refreshUser (first time)')
     refreshUser().finally(() => setIsLoading(false))
   }, [refreshUser])
 
