@@ -94,14 +94,15 @@ export function GPUUtilization() {
 
   const filteredNodes = (() => {
     let result = gpuNodes.filter(n => {
-      const lastPart = n.cluster.split('/').pop() ?? n.cluster
-      return reachableClusterNames.has(n.cluster) || reachableClusterNames.has(lastPart)
+      const cluster = n.cluster ?? ''
+      const lastPart = cluster.split('/').pop() ?? cluster
+      return reachableClusterNames.has(cluster) || reachableClusterNames.has(lastPart)
     })
     if (!isAllClustersSelected) {
-      result = result.filter(n => selectedClusters.some(c => n.cluster.startsWith(c)))
+      result = result.filter(n => selectedClusters.some(c => (n.cluster ?? '').startsWith(c)))
     }
     if (localClusterFilter.length > 0) {
-      result = result.filter(n => localClusterFilter.some(c => n.cluster.startsWith(c)))
+      result = result.filter(n => localClusterFilter.some(c => (n.cluster ?? '').startsWith(c)))
     }
     return result
   })()
@@ -347,7 +348,7 @@ export function GPUUtilization() {
       </div>
 
       {(() => {
-        const clusterCount = new Set(filteredNodes.map(n => n.cluster.split('/').pop() ?? n.cluster)).size
+        const clusterCount = new Set(filteredNodes.map(n => (n.cluster ?? '').split('/').pop() ?? n.cluster ?? '')).size
         return (
           <div className="mt-2 pt-2 border-t border-border/50 text-xs text-muted-foreground">
             {filteredNodes.length} GPU node{filteredNodes.length !== 1 ? 's' : ''} across {clusterCount} cluster{clusterCount !== 1 ? 's' : ''}

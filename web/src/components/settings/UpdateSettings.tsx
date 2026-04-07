@@ -676,7 +676,7 @@ export function UpdateSettings() {
             <span className="text-sm text-muted-foreground">{formatLastChecked()}</span>
           </div>
         </div>
-        {error && (
+        {error && !isUpdating && agentConnected && (
           <div className="mt-3 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
             <p className="text-sm text-red-400 font-medium">{t('settings.updates.errorChecking')}</p>
             <p className="text-xs text-red-400/80 mt-1">{error}</p>

@@ -57,6 +57,8 @@ interface ResolveMutation {
   type: 'resolve'
   ruleId: string
   cluster?: string
+  /** When set, narrow the match to a specific resource (e.g., pod name) */
+  resource?: string
   /** When set, match any alert for this rule regardless of cluster */
   matchAny?: boolean
 }
@@ -199,7 +201,10 @@ function applyMutations(
             if (
               result[i].ruleId === mut.ruleId &&
               result[i].status === 'firing' &&
-              result[i].cluster === mut.cluster
+              result[i].cluster === mut.cluster &&
+              // When resource is specified, only resolve the exact resource match
+              // (e.g., a specific pod). Otherwise resolve all alerts for the cluster.
+              (!mut.resource || result[i].resource === mut.resource)
             ) {
               result[i] = { ...result[i], status: 'resolved', resolvedAt }
             }
@@ -1085,6 +1090,10 @@ Please provide:
   const evaluatePodCrash = (rule: AlertRule) => {
       const threshold = rule.condition.threshold || 5
 
+      // Track which (cluster, pod) combos are still above threshold so we can
+      // auto-resolve alerts whose pods have recovered or been removed.
+      const stillFiringKeys = new Set<string>()
+
       for (const issue of podIssuesRef.current) {
         if (issue.restarts && issue.restarts >= threshold) {
           const clusterMatch =
@@ -1095,6 +1104,7 @@ Please provide:
             rule.condition.namespaces.includes(issue.namespace || '')
 
           if (clusterMatch && namespaceMatch) {
+            stillFiringKeys.add(alertDedupKey(rule.id, rule.condition.type, issue.cluster, issue.name))
             createAlert(
               rule,
               `Pod ${issue.name} has restarted ${issue.restarts} times (${issue.status})`,
@@ -1107,6 +1117,21 @@ Please provide:
               issue.name,
               'Pod'
             )
+          }
+        }
+      }
+
+      // Auto-resolve any firing pod_crash alerts whose pods are no longer above
+      // the threshold (pod recovered, deleted, or restarts dropped).
+      const currentAlerts = alertsRef.current
+      for (const a of currentAlerts) {
+        if (a.ruleId === rule.id && a.status === 'firing') {
+          const key = alertDedupKey(a.ruleId, rule.condition.type, a.cluster, a.resource)
+          if (!stillFiringKeys.has(key)) {
+            const acc = mutationAccRef.current
+            if (acc) {
+              acc.mutations.push({ type: 'resolve', ruleId: rule.id, cluster: a.cluster })
+            }
           }
         }
       }

@@ -108,10 +108,10 @@ export function GitOpsDrift({ config }: GitOpsDriftProps) {
     if (customFilter.trim()) {
       const query = customFilter.toLowerCase()
       result = result.filter(d =>
-        d.resource.toLowerCase().includes(query) ||
-        d.kind.toLowerCase().includes(query) ||
-        d.cluster.toLowerCase().includes(query) ||
-        d.namespace.toLowerCase().includes(query)
+        (d.resource || '').toLowerCase().includes(query) ||
+        (d.kind || '').toLowerCase().includes(query) ||
+        (d.cluster || '').toLowerCase().includes(query) ||
+        (d.namespace || '').toLowerCase().includes(query)
       )
     }
 
@@ -154,9 +154,9 @@ export function GitOpsDrift({ config }: GitOpsDriftProps) {
       defaultDirection: 'asc',
       comparators: {
         severity: (a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity],
-        type: (a, b) => a.driftType.localeCompare(b.driftType),
-        resource: (a, b) => a.resource.localeCompare(b.resource),
-        cluster: (a, b) => a.cluster.localeCompare(b.cluster) } },
+        type: (a, b) => (a.driftType || '').localeCompare(b.driftType || ''),
+        resource: (a, b) => (a.resource || '').localeCompare(b.resource || ''),
+        cluster: (a, b) => (a.cluster || '').localeCompare(b.cluster || '') } },
     defaultLimit: 5 })
 
   // Compute stats from the hook's sorted+filtered data (before pagination)

@@ -67,6 +67,10 @@ export const STORAGE_KEY_FIRST_AGENT_CONNECT = 'kc-first-agent-connect'
 export const STORAGE_KEY_VISIT_STREAK = 'ksc-visit-streak'
 export const STORAGE_KEY_SEEN_TIPS = 'ksc-seen-tips'
 
+// ── Snooze persistence ────────────────────────────────────────────────
+export const STORAGE_KEY_SNOOZED_CARDS = 'kubestellar-snoozed-cards'
+export const STORAGE_KEY_SNOOZED_RECOMMENDATIONS = 'kubestellar-snoozed-recommendations'
+
 // ── Notification dedup ────────────────────────────────────────────────
 export const STORAGE_KEY_NOTIFIED_ALERT_KEYS = 'kc-notified-alert-keys'
 
