@@ -27,7 +27,9 @@ import { TourProvider } from '../../hooks/useTour'
 import { SetupInstructionsDialog } from '../setup/SetupInstructionsDialog'
 import { InClusterAgentDialog } from '../setup/InClusterAgentDialog'
 import { AgentSetupDialog } from '../agent/AgentSetupDialog'
-import { KeepAliveOutlet } from './KeepAliveOutlet'
+import { Outlet } from 'react-router-dom'
+// KeepAliveOutlet disabled — breaks client-side navigation (routes don't re-render)
+// import { KeepAliveOutlet } from './KeepAliveOutlet'
 import { PageErrorBoundary } from '../PageErrorBoundary'
 import { UpdateProgressBanner } from '../updates/UpdateProgressBanner'
 import { useUpdateProgress } from '../../hooks/useUpdateProgress'
@@ -507,7 +509,7 @@ export function Layout({ children }: LayoutProps) {
               </Suspense>
             </PageErrorBoundary>
           ) : (
-            <KeepAliveOutlet />
+            <Outlet />
           )}
         </main>
       </div>

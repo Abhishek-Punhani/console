@@ -33,8 +33,10 @@ export function KeepAliveOutlet() {
   const cache = cacheRef.current
   if (outlet) {
     if (cache.has(currentPath)) {
-      // Update access time (for LRU eviction), keep existing element
-      cache.get(currentPath)!.lastAccessed = Date.now()
+      // Update access time and element (outlet may change on re-navigation)
+      const entry = cache.get(currentPath)!
+      entry.lastAccessed = Date.now()
+      entry.element = outlet
     } else {
       // New route — cache it
       cache.set(currentPath, { element: outlet, lastAccessed: Date.now() })
