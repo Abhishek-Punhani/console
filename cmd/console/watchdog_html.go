@@ -14,7 +14,7 @@ const watchdogFallbackHTML = `<!DOCTYPE html>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#0a0a1a;color:#e2e8f0;font-family:system-ui,-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;overflow:hidden}
-.wrap{text-align:center;max-width:480px;padding:2rem}
+.wrap{text-align:center;width:480px;max-width:calc(100vw - 2rem);padding:2rem}
 @keyframes spin{to{transform:rotate(360deg)}}
 h1{font-size:1.25rem;font-weight:500;margin-bottom:.25rem}
 .subtitle{color:#94a3b8;font-size:.875rem;margin-bottom:1.5rem}
@@ -38,9 +38,11 @@ h1{font-size:1.25rem;font-weight:500;margin-bottom:.25rem}
 
 /* Tip section (#5899) */
 .elapsed{min-height:1.5rem}
-.tip{margin-top:1.5rem;padding:.75rem 1rem;background:rgba(99,102,241,.05);border:1px solid rgba(99,102,241,.15);border-radius:.5rem;font-size:.75rem;color:#94a3b8;line-height:1.5;text-align:left;min-height:3rem;display:flex;align-items:center;gap:.5rem}
+.tip{margin-top:1.5rem;padding:.75rem 1rem;background:rgba(99,102,241,.05);border:1px solid rgba(99,102,241,.15);border-radius:.5rem;font-size:.75rem;color:#94a3b8;line-height:1.5;text-align:left;height:3.5rem;display:flex;align-items:center;gap:.5rem;overflow:hidden}
 .tip-label{color:#818cf8;font-weight:600;flex-shrink:0}
 .tip-text{flex:1;transition:opacity .4s ease}
+
+.version-info{position:fixed;bottom:.75rem;right:1rem;font-size:.65rem;color:#475569;font-family:ui-monospace,monospace;opacity:.6}
 
 .stars{position:fixed;inset:0;pointer-events:none}
 .star{position:absolute;width:2px;height:2px;background:#fff;border-radius:50%;opacity:.3;animation:twinkle 3s ease-in-out infinite}
@@ -73,6 +75,7 @@ h1{font-size:1.25rem;font-weight:500;margin-bottom:.25rem}
 <div class="tip" id="tip"><span class="tip-label">Tip</span><span class="tip-text" id="tip-text">Loading&hellip;</span></div>
 <a href="/" class="retry-btn" onclick="checkNow();return false;">Retry now</a>
 </div>
+<div class="version-info">{{VERSION_INFO}}</div>
 
 <script>
 // Star field

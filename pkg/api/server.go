@@ -61,13 +61,18 @@ const (
 // Used in /health response for stale-frontend detection.
 var Version = "dev"
 
-// buildInfo holds VCS metadata extracted from the Go binary at startup.
-var buildInfo struct {
+// BuildInfo holds VCS metadata extracted from the Go binary at startup.
+type BuildInfo struct {
 	GoVersion   string
 	VCSRevision string
 	VCSTime     string
 	VCSModified string
 }
+
+var buildInfo BuildInfo
+
+// GetBuildInfo returns the VCS metadata extracted from the Go binary.
+func GetBuildInfo() BuildInfo { return buildInfo }
 
 func init() {
 	info, ok := debug.ReadBuildInfo()

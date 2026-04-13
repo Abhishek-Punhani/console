@@ -509,9 +509,7 @@ export function Layout({ children: _children }: LayoutProps) {
           className="relative flex-1 p-4 pb-24 pb-[calc(6rem+env(safe-area-inset-bottom))] md:p-6 md:pb-28 md:pb-[calc(7rem+env(safe-area-inset-bottom))] transition-[margin] duration-300 overflow-y-auto overflow-x-hidden scroll-enhanced min-w-0"
         >
           <NavigationProgress />
-          <Suspense fallback={<ContentLoadingSkeleton />}>
-            <Outlet />
-          </Suspense>
+          <Outlet />
         </main>
       </div>
 

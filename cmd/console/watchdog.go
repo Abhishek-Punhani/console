@@ -26,6 +26,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	api "github.com/kubestellar/console/pkg/api"
 )
 
 const (
@@ -472,7 +474,17 @@ func serveFallback(w http.ResponseWriter, r *http.Request) {
 	if strings.Contains(accept, "text/html") || accept == "" || accept == "*/*" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		w.Write([]byte(watchdogFallbackHTML))
+		// Inject version info into the HTML template
+		commitShort := api.GetBuildInfo().VCSRevision
+		if len(commitShort) > 7 {
+			commitShort = commitShort[:7]
+		}
+		versionText := "v" + api.Version
+		if commitShort != "" {
+			versionText += " · " + commitShort
+		}
+		html := strings.Replace(watchdogFallbackHTML, "{{VERSION_INFO}}", versionText, 1)
+		w.Write([]byte(html))
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
