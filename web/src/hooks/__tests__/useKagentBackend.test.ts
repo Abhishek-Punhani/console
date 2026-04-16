@@ -517,7 +517,8 @@ describe('useKagentBackend', () => {
     localStorage.setItem('kc_agent_backend_preference', 'kagent')
     setupBothUnavailable()
     const { result, unmount } = renderHook(() => useKagentBackend())
-    await waitFor(() => expect(mockFetchKagentStatus).toHaveBeenCalled())
+    // Wait for the first poll to settle so hasPolled=true and activeBackend reflects live state
+    await waitFor(() => expect(result.current.hasPolled).toBe(true))
     expect(result.current.activeBackend).toBe('kc-agent')
     setupKagentAvailable()
     await act(async () => {
@@ -575,6 +576,80 @@ describe('useKagentBackend', () => {
     await waitFor(() => expect(result.current.kagentiAgents).toHaveLength(2))
     expect(result.current.kagentiAgents[0].name).toBe('ki-1')
     expect(result.current.kagentiAgents[1].name).toBe('ki-2')
+    unmount()
+  })
+
+  // ---------------------------------------------------------------------------
+  // hasPolled flag — guards AgentSelector blink-and-disappear race
+  // ---------------------------------------------------------------------------
+
+  it('exposes hasPolled property', () => {
+    const { result, unmount } = renderHook(() => useKagentBackend())
+    expect(result.current).toHaveProperty('hasPolled')
+    unmount()
+  })
+
+  it('hasPolled starts false before the first poll resolves', () => {
+    // Use a never-resolving mock so we can inspect the pre-poll state
+    mockFetchKagentStatus.mockReturnValue(new Promise(() => {}))
+    mockFetchKagentiProviderStatus.mockReturnValue(new Promise(() => {}))
+    const { result, unmount } = renderHook(() => useKagentBackend())
+    expect(result.current.hasPolled).toBe(false)
+    unmount()
+  })
+
+  it('hasPolled becomes true after the first poll completes', async () => {
+    setupBothUnavailable()
+    const { result, unmount } = renderHook(() => useKagentBackend())
+    expect(result.current.hasPolled).toBe(false)
+    await waitFor(() => expect(result.current.hasPolled).toBe(true))
+    unmount()
+  })
+
+  it('hasPolled becomes true even when kagenti is available', async () => {
+    setupKagentiAvailable()
+    const { result, unmount } = renderHook(() => useKagentBackend())
+    await waitFor(() => expect(result.current.hasPolled).toBe(true))
+    expect(result.current.kagentiAvailable).toBe(true)
+    unmount()
+  })
+
+  it('activeBackend uses stored preference before first poll (pre-poll stability)', () => {
+    // Pre-poll: stored pref is kagenti. Poll hasn't returned yet so kagentiAvailable=false.
+    // activeBackend should still return 'kagenti' (not snap to kc-agent before the poll).
+    localStorage.setItem('kc_agent_backend_preference', 'kagenti')
+    mockFetchKagentiProviderStatus.mockReturnValue(new Promise(() => {})) // never resolves
+    mockFetchKagentStatus.mockReturnValue(new Promise(() => {}))
+    const { result, unmount } = renderHook(() => useKagentBackend())
+    expect(result.current.hasPolled).toBe(false)
+    expect(result.current.activeBackend).toBe('kagenti') // trust stored pref, not live state
+    unmount()
+  })
+
+  it('activeBackend reflects live kagentiAvailable after first poll', async () => {
+    localStorage.setItem('kc_agent_backend_preference', 'kagenti')
+    setupKagentiAvailable()
+    const { result, unmount } = renderHook(() => useKagentBackend())
+    await waitFor(() => expect(result.current.hasPolled).toBe(true))
+    expect(result.current.activeBackend).toBe('kagenti')
+    unmount()
+  })
+
+  it('activeBackend falls back to kc-agent after poll when preferred kagenti is unavailable', async () => {
+    localStorage.setItem('kc_agent_backend_preference', 'kagenti')
+    setupBothUnavailable()
+    const { result, unmount } = renderHook(() => useKagentBackend())
+    await waitFor(() => expect(result.current.hasPolled).toBe(true))
+    expect(result.current.activeBackend).toBe('kc-agent')
+    unmount()
+  })
+
+  it('hasPolled remains true across subsequent refreshes', async () => {
+    setupBothUnavailable()
+    const { result, unmount } = renderHook(() => useKagentBackend())
+    await waitFor(() => expect(result.current.hasPolled).toBe(true))
+    await act(async () => { await result.current.refresh() })
+    expect(result.current.hasPolled).toBe(true)
     unmount()
   })
 })

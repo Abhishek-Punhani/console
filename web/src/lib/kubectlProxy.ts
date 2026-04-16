@@ -6,6 +6,7 @@
  */
 
 import { isNetlifyDeployment } from './demoMode'
+import { isInClusterMode } from '../hooks/useBackendHealth'
 import {
   LOCAL_AGENT_WS_URL,
   WS_CONNECT_TIMEOUT_MS,
@@ -68,6 +69,47 @@ class KubectlProxy {
   private activeRequests = 0
   private readonly maxConcurrentRequests = MAX_CONCURRENT_KUBECTL_REQUESTS // Limit concurrent requests to local agent
   private lastConnectionFailureAt = 0
+  private wsMode: 'unknown' | 'local' | 'backend' = 'unknown'
+
+  private getBackendWSURL(): string {
+    if (typeof window === 'undefined') return LOCAL_AGENT_WS_URL
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${wsProtocol}//${window.location.host}/ws`
+  }
+
+  private async resolveWebSocketURL(): Promise<string> {
+    if (this.wsMode === 'backend') return this.getBackendWSURL()
+    if (this.wsMode === 'local') return LOCAL_AGENT_WS_URL
+
+    // Fast path from shared backend health state
+    if (isInClusterMode()) {
+      this.wsMode = 'backend'
+      return this.getBackendWSURL()
+    }
+
+    // Fallback probe for early startup before health subscribers settle.
+    try {
+      const res = await fetch('/health', {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(1200),
+      })
+      if (res.ok) {
+        const data = (await res.json().catch(() => null)) as {
+          in_cluster?: boolean
+        } | null
+        if (data?.in_cluster === true) {
+          this.wsMode = 'backend'
+          return this.getBackendWSURL()
+        }
+      }
+    } catch {
+      // ignore probe failure and fall back to local endpoint
+    }
+
+    this.wsMode = 'local'
+    return LOCAL_AGENT_WS_URL
+  }
 
   /**
    * Ensure WebSocket is connected
@@ -82,94 +124,137 @@ class KubectlProxy {
       return
     }
 
-    // Fail fast during cooldown windows to avoid repeated expensive retries
-    if (Date.now() - this.lastConnectionFailureAt < WS_CONNECTION_COOLDOWN_MS) {
-      throw new Error('Local agent unavailable (cooldown)')
-    }
-
     if (this.connectPromise) {
       return this.connectPromise
     }
 
     if (this.isConnecting) {
       // Wait for existing connection attempt
-      await new Promise(resolve => setTimeout(resolve, FOCUS_DELAY_MS))
+      await new Promise((resolve) => setTimeout(resolve, FOCUS_DELAY_MS))
       return this.ensureConnected()
     }
 
     this.isConnecting = true
-    this.connectPromise = new Promise((resolve, reject) => {
-      let settled = false
-      let connectTimeout: ReturnType<typeof setTimeout> | null = null
-      const finalize = (cb: () => void) => {
-        if (settled) return
-        settled = true
-        if (connectTimeout) clearTimeout(connectTimeout)
-        cb()
+    this.connectPromise = (async () => {
+      const wsURL = await this.resolveWebSocketURL()
+      const isLocalTarget = wsURL === LOCAL_AGENT_WS_URL
+
+      // Fail fast during cooldown windows only for local-agent targets.
+      // For backend /ws targets we should always retry, because the backend
+      // may become reachable while a previous local attempt is still cooling down.
+      if (
+        isLocalTarget &&
+        Date.now() - this.lastConnectionFailureAt < WS_CONNECTION_COOLDOWN_MS
+      ) {
+        throw new Error('Local agent unavailable (cooldown)')
       }
-      try {
-        this.ws = new WebSocket(LOCAL_AGENT_WS_URL)
-        connectTimeout = setTimeout(() => {
-          try { this.ws?.close() } catch { /* ignore */ }
-          this.lastConnectionFailureAt = Date.now()
-          this.isConnecting = false
-          this.connectPromise = null
-          finalize(() => reject(new Error(`Connection timeout after ${WS_CONNECT_TIMEOUT_MS}ms`)))
-        }, WS_CONNECT_TIMEOUT_MS)
 
-        this.ws.onopen = () => {
-          this.isConnecting = false
-          this.lastConnectionFailureAt = 0
-          finalize(() => resolve())
+      return new Promise<void>((resolve, reject) => {
+        let settled = false
+        let connectTimeout: ReturnType<typeof setTimeout> | null = null
+        const finalize = (cb: () => void) => {
+          if (settled) return
+          settled = true
+          if (connectTimeout) clearTimeout(connectTimeout)
+          cb()
         }
-
-        this.ws.onmessage = (event) => {
-          try {
-            const message: Message = JSON.parse(event.data)
-            const pending = this.pendingRequests.get(message.id)
-            if (pending) {
-              clearTimeout(pending.timeout)
-              this.pendingRequests.delete(message.id)
-
-              if (message.type === 'error') {
-                const errorPayload = message.payload as { code: string; message: string }
-                pending.reject(new Error(errorPayload.message || 'Unknown error'))
-              } else {
-                pending.resolve(message.payload as KubectlResponse)
-              }
+        try {
+          this.ws = new WebSocket(wsURL)
+          connectTimeout = setTimeout(() => {
+            try {
+              this.ws?.close()
+            } catch {
+              /* ignore */
             }
-          } catch (e) {
-            console.error('[KubectlProxy] Failed to parse message:', e)
+            this.lastConnectionFailureAt = Date.now()
+            this.isConnecting = false
+            this.connectPromise = null
+            finalize(() =>
+              reject(
+                new Error(
+                  `Connection timeout after ${WS_CONNECT_TIMEOUT_MS}ms`,
+                ),
+              ),
+            )
+          }, WS_CONNECT_TIMEOUT_MS)
+
+          this.ws.onopen = () => {
+            this.isConnecting = false
+            this.lastConnectionFailureAt = 0
+            this.wsMode = wsURL === LOCAL_AGENT_WS_URL ? 'local' : 'backend'
+            finalize(() => resolve())
           }
-        }
 
-        this.ws.onclose = () => {
-          this.ws = null
-          this.connectPromise = null
+          this.ws.onmessage = (event) => {
+            try {
+              const message: Message = JSON.parse(event.data)
+              const pending = this.pendingRequests.get(message.id)
+              if (pending) {
+                clearTimeout(pending.timeout)
+                this.pendingRequests.delete(message.id)
+
+                if (message.type === 'error') {
+                  const errorPayload = message.payload as {
+                    code: string
+                    message: string
+                  }
+                  pending.reject(
+                    new Error(errorPayload.message || 'Unknown error'),
+                  )
+                } else {
+                  pending.resolve(message.payload as KubectlResponse)
+                }
+              }
+            } catch (e) {
+              console.error('[KubectlProxy] Failed to parse message:', e)
+            }
+          }
+
+          this.ws.onclose = () => {
+            this.ws = null
+            this.connectPromise = null
+            this.isConnecting = false
+            this.lastConnectionFailureAt = Date.now()
+            this.wsMode = 'unknown'
+
+            // Reject all pending requests
+            this.pendingRequests.forEach((pending, id) => {
+              clearTimeout(pending.timeout)
+              pending.reject(new Error('Connection closed'))
+              this.pendingRequests.delete(id)
+            })
+          }
+
+          this.ws.onerror = (err) => {
+            console.error('[KubectlProxy] WebSocket error:', err)
+            this.isConnecting = false
+            this.connectPromise = null
+            this.lastConnectionFailureAt = Date.now()
+            this.wsMode = 'unknown'
+            finalize(() =>
+              reject(
+                new Error(
+                  isLocalTarget
+                    ? 'Failed to connect to local agent'
+                    : 'Failed to connect to backend WebSocket',
+                ),
+              ),
+            )
+          }
+        } catch (err) {
           this.isConnecting = false
-          this.lastConnectionFailureAt = Date.now()
-
-          // Reject all pending requests
-          this.pendingRequests.forEach((pending, id) => {
-            clearTimeout(pending.timeout)
-            pending.reject(new Error('Connection closed'))
-            this.pendingRequests.delete(id)
-          })
-        }
-
-        this.ws.onerror = (err) => {
-          console.error('[KubectlProxy] WebSocket error:', err)
-          this.isConnecting = false
           this.connectPromise = null
           this.lastConnectionFailureAt = Date.now()
-          finalize(() => reject(new Error('Failed to connect to local agent')))
+          this.wsMode = 'unknown'
+          finalize(() => reject(err))
         }
-      } catch (err) {
-        this.isConnecting = false
-        this.connectPromise = null
-        this.lastConnectionFailureAt = Date.now()
-        finalize(() => reject(err))
-      }
+      })
+    })().catch((err) => {
+      this.isConnecting = false
+      this.connectPromise = null
+      this.lastConnectionFailureAt = Date.now()
+      this.wsMode = 'unknown'
+      throw err
     })
 
     return this.connectPromise
@@ -188,7 +273,12 @@ class KubectlProxy {
    */
   async exec(
     args: string[],
-    options: { context?: string; namespace?: string; timeout?: number; priority?: boolean } = {}
+    options: {
+      context?: string
+      namespace?: string
+      timeout?: number
+      priority?: boolean
+    } = {},
   ): Promise<KubectlResponse> {
     // Priority requests bypass the queue for immediate execution (interactive user actions)
     if (options.priority) {
@@ -237,7 +327,7 @@ class KubectlProxy {
    */
   private async execImmediate(
     args: string[],
-    options: { context?: string; namespace?: string; timeout?: number } = {}
+    options: { context?: string; namespace?: string; timeout?: number } = {},
   ): Promise<KubectlResponse> {
     await this.ensureConnected()
 
@@ -284,7 +374,10 @@ class KubectlProxy {
    * Get nodes for a cluster (used for health checks)
    */
   async getNodes(context: string): Promise<NodeInfo[]> {
-    const response = await this.exec(['get', 'nodes', '-o', 'json'], { context, timeout: KUBECTL_MAX_TIMEOUT_MS })
+    const response = await this.exec(['get', 'nodes', '-o', 'json'], {
+      context,
+      timeout: KUBECTL_MAX_TIMEOUT_MS,
+    })
     if (response.exitCode !== 0) {
       throw new Error(response.error || 'Failed to get nodes')
     }
@@ -303,15 +396,17 @@ class KubectlProxy {
       const cpuCores = parseResourceQuantity(cpuStr)
 
       // Check Ready condition - Kubernetes uses 'True' (capitalized string)
-      const readyCondition = node.status?.conditions?.find((c: NodeCondition) => c.type === 'Ready')
+      const readyCondition = node.status?.conditions?.find(
+        (c: NodeCondition) => c.type === 'Ready',
+      )
       const isReady = readyCondition?.status === 'True'
 
       return {
         name: node.metadata.name,
         ready: isReady,
         roles: Object.keys(node.metadata.labels || {})
-          .filter(k => k.startsWith('node-role.kubernetes.io/'))
-          .map(k => k.replace('node-role.kubernetes.io/', '')),
+          .filter((k) => k.startsWith('node-role.kubernetes.io/'))
+          .map((k) => k.replace('node-role.kubernetes.io/', '')),
         cpuCores: cpuCores,
         memoryBytes: parseResourceQuantity(alloc.memory),
         storageBytes: parseResourceQuantity(alloc['ephemeral-storage']),
@@ -323,12 +418,29 @@ class KubectlProxy {
   /**
    * Get pod count and resource requests for a cluster
    */
-  async getPodMetrics(context: string): Promise<{ count: number; cpuRequestsMillicores: number; memoryRequestsBytes: number }> {
-    const response = await this.exec(['get', 'pods', '-A', '-o', 'json'], { context, timeout: KUBECTL_MAX_TIMEOUT_MS })
+  async getPodMetrics(
+    context: string,
+  ): Promise<{
+    count: number
+    cpuRequestsMillicores: number
+    memoryRequestsBytes: number
+  }> {
+    const response = await this.exec(['get', 'pods', '-A', '-o', 'json'], {
+      context,
+      timeout: KUBECTL_MAX_TIMEOUT_MS,
+    })
     if (response.exitCode !== 0) {
       throw new Error(response.error || 'Failed to get pods')
     }
-    let data: { items?: Array<{ spec?: { containers?: Array<{ resources?: { requests?: { cpu?: string; memory?: string } } }> } }> }
+    let data: {
+      items?: Array<{
+        spec?: {
+          containers?: Array<{
+            resources?: { requests?: { cpu?: string; memory?: string } }
+          }>
+        }
+      }>
+    }
     try {
       data = JSON.parse(response.output)
     } catch {
@@ -375,7 +487,7 @@ class KubectlProxy {
   async getNamespaces(context: string): Promise<string[]> {
     const response = await this.exec(
       ['get', 'namespaces', '-o', 'jsonpath={.items[*].metadata.name}'],
-      { context, timeout: KUBECTL_MAX_TIMEOUT_MS }
+      { context, timeout: KUBECTL_MAX_TIMEOUT_MS },
     )
     if (response.exitCode !== 0) {
       throw new Error(response.error || 'Failed to get namespaces')
@@ -386,9 +498,15 @@ class KubectlProxy {
   /**
    * Get services from a cluster
    */
-  async getServices(context: string, namespace?: string): Promise<KubectlServiceResult[]> {
+  async getServices(
+    context: string,
+    namespace?: string,
+  ): Promise<KubectlServiceResult[]> {
     const nsArg = namespace ? ['-n', namespace] : ['-A']
-    const response = await this.exec(['get', 'services', ...nsArg, '-o', 'json'], { context, timeout: KUBECTL_EXTENDED_TIMEOUT_MS })
+    const response = await this.exec(
+      ['get', 'services', ...nsArg, '-o', 'json'],
+      { context, timeout: KUBECTL_EXTENDED_TIMEOUT_MS },
+    )
     if (response.exitCode !== 0) {
       throw new Error(response.error || 'Failed to get services')
     }
@@ -421,7 +539,9 @@ class KubectlProxy {
         namespace: svc.metadata.namespace,
         type: svc.spec.type,
         clusterIP: svc.spec.clusterIP || '',
-        ports: (svc.spec.ports || []).map(p => `${p.port}/${p.protocol}`).join(', '),
+        ports: (svc.spec.ports || [])
+          .map((p) => `${p.port}/${p.protocol}`)
+          .join(', '),
         externalIP: allExternalIPs.join(', '),
         externalIPs: allExternalIPs,
         lbStatus,
@@ -433,42 +553,84 @@ class KubectlProxy {
   /**
    * Get PVCs from a cluster
    */
-  async getPVCs(context: string, namespace?: string): Promise<{ name: string; namespace: string; status: string; capacity: string; storageClass: string }[]> {
+  async getPVCs(
+    context: string,
+    namespace?: string,
+  ): Promise<
+    {
+      name: string
+      namespace: string
+      status: string
+      capacity: string
+      storageClass: string
+    }[]
+  > {
     const nsArg = namespace ? ['-n', namespace] : ['-A']
-    const response = await this.exec(['get', 'pvc', ...nsArg, '-o', 'json'], { context, timeout: KUBECTL_EXTENDED_TIMEOUT_MS })
+    const response = await this.exec(['get', 'pvc', ...nsArg, '-o', 'json'], {
+      context,
+      timeout: KUBECTL_EXTENDED_TIMEOUT_MS,
+    })
     if (response.exitCode !== 0) {
       throw new Error(response.error || 'Failed to get PVCs')
     }
-    let data: { items?: Array<{ metadata: { name: string; namespace: string }; status: { phase: string; capacity?: { storage: string } }; spec: { storageClassName?: string } }> }
+    let data: {
+      items?: Array<{
+        metadata: { name: string; namespace: string }
+        status: { phase: string; capacity?: { storage: string } }
+        spec: { storageClassName?: string }
+      }>
+    }
     try {
       data = JSON.parse(response.output)
     } catch {
       throw new Error('Failed to parse kubectl output as JSON')
     }
-    return (data.items || []).map((pvc: { metadata: { name: string; namespace: string }; status: { phase: string; capacity?: { storage: string } }; spec: { storageClassName?: string } }) => ({
-      name: pvc.metadata.name,
-      namespace: pvc.metadata.namespace,
-      status: pvc.status.phase,
-      capacity: pvc.status.capacity?.storage || '',
-      storageClass: pvc.spec.storageClassName || '',
-    }))
+    return (data.items || []).map(
+      (pvc: {
+        metadata: { name: string; namespace: string }
+        status: { phase: string; capacity?: { storage: string } }
+        spec: { storageClassName?: string }
+      }) => ({
+        name: pvc.metadata.name,
+        namespace: pvc.metadata.namespace,
+        status: pvc.status.phase,
+        capacity: pvc.status.capacity?.storage || '',
+        storageClass: pvc.spec.storageClassName || '',
+      }),
+    )
   }
 
   /**
    * Get actual resource usage from metrics-server via kubectl top nodes
    * Returns actual CPU and memory consumption (not requests/allocations)
    */
-  async getClusterUsage(context: string): Promise<{ cpuUsageMillicores: number; memoryUsageBytes: number; metricsAvailable: boolean }> {
+  async getClusterUsage(
+    context: string,
+  ): Promise<{
+    cpuUsageMillicores: number
+    memoryUsageBytes: number
+    metricsAvailable: boolean
+  }> {
     try {
-      const response = await this.exec(['top', 'nodes', '--no-headers'], { context, timeout: METRICS_SERVER_TIMEOUT_MS })
+      const response = await this.exec(['top', 'nodes', '--no-headers'], {
+        context,
+        timeout: METRICS_SERVER_TIMEOUT_MS,
+      })
       if (response.exitCode !== 0) {
         // Metrics server not available
-        return { cpuUsageMillicores: 0, memoryUsageBytes: 0, metricsAvailable: false }
+        return {
+          cpuUsageMillicores: 0,
+          memoryUsageBytes: 0,
+          metricsAvailable: false,
+        }
       }
 
       // Parse kubectl top nodes output
       // Format: NAME   CPU(cores)   CPU%   MEMORY(bytes)   MEMORY%
-      const lines = response.output.trim().split('\n').filter(l => l.trim())
+      const lines = response.output
+        .trim()
+        .split('\n')
+        .filter((l) => l.trim())
       let totalCpuMillicores = 0
       let totalMemoryBytes = 0
 
@@ -489,10 +651,18 @@ class KubectlProxy {
         }
       }
 
-      return { cpuUsageMillicores: totalCpuMillicores, memoryUsageBytes: totalMemoryBytes, metricsAvailable: true }
+      return {
+        cpuUsageMillicores: totalCpuMillicores,
+        memoryUsageBytes: totalMemoryBytes,
+        metricsAvailable: true,
+      }
     } catch (err) {
       console.error(`[ClusterUsage] ${context}: error getting usage -`, err)
-      return { cpuUsageMillicores: 0, memoryUsageBytes: 0, metricsAvailable: false }
+      return {
+        cpuUsageMillicores: 0,
+        memoryUsageBytes: 0,
+        metricsAvailable: false,
+      }
     }
   }
 
@@ -509,24 +679,40 @@ class KubectlProxy {
       ])
 
       // Try to get usage metrics with a short timeout, but don't block health check
-      let usageMetrics = { cpuUsageMillicores: 0, memoryUsageBytes: 0, metricsAvailable: false }
+      let usageMetrics = {
+        cpuUsageMillicores: 0,
+        memoryUsageBytes: 0,
+        metricsAvailable: false,
+      }
       try {
         const usagePromise = this.getClusterUsage(context)
         const timeoutPromise = new Promise<typeof usageMetrics>((_, reject) =>
-          setTimeout(() => reject(new Error('Usage metrics timeout')), METRICS_SERVER_TIMEOUT_MS)
+          setTimeout(
+            () => reject(new Error('Usage metrics timeout')),
+            METRICS_SERVER_TIMEOUT_MS,
+          ),
         )
         usageMetrics = await Promise.race([usagePromise, timeoutPromise])
       } catch (err) {
         // Usage metrics failed or timed out - continue without them
-        console.error(`[ClusterHealth] ${context}: Usage metrics unavailable, using requests only`, err)
+        console.error(
+          `[ClusterHealth] ${context}: Usage metrics unavailable, using requests only`,
+          err,
+        )
       }
 
-      const readyNodes = nodes.filter(n => n.ready).length
+      const readyNodes = nodes.filter((n) => n.ready).length
 
       // Aggregate resource metrics from all nodes (capacity)
       const totalCpuCores = nodes.reduce((sum, n) => sum + (n.cpuCores || 0), 0)
-      const totalMemoryBytes = nodes.reduce((sum, n) => sum + (n.memoryBytes || 0), 0)
-      const totalStorageBytes = nodes.reduce((sum, n) => sum + (n.storageBytes || 0), 0)
+      const totalMemoryBytes = nodes.reduce(
+        (sum, n) => sum + (n.memoryBytes || 0),
+        0,
+      )
+      const totalStorageBytes = nodes.reduce(
+        (sum, n) => sum + (n.storageBytes || 0),
+        0,
+      )
 
       // Consider healthy if at least 50% of nodes are ready (lenient threshold)
       // A cluster with working nodes should show as healthy, not warning
@@ -580,7 +766,10 @@ class KubectlProxy {
    */
   async getPodIssues(context: string, namespace?: string): Promise<PodIssue[]> {
     const nsArg = namespace ? ['-n', namespace] : ['-A']
-    const response = await this.exec(['get', 'pods', ...nsArg, '-o', 'json'], { context, timeout: KUBECTL_EXTENDED_TIMEOUT_MS })
+    const response = await this.exec(['get', 'pods', ...nsArg, '-o', 'json'], {
+      context,
+      timeout: KUBECTL_EXTENDED_TIMEOUT_MS,
+    })
 
     if (response.exitCode !== 0) {
       throw new Error(response.error || 'Failed to get pods')
@@ -622,7 +811,14 @@ class KubectlProxy {
 
         if (cs.state?.waiting) {
           const waitReason = cs.state.waiting.reason ?? ''
-          if (['CrashLoopBackOff', 'ImagePullBackOff', 'ErrImagePull', 'CreateContainerError'].includes(waitReason)) {
+          if (
+            [
+              'CrashLoopBackOff',
+              'ImagePullBackOff',
+              'ErrImagePull',
+              'CreateContainerError',
+            ].includes(waitReason)
+          ) {
             problems.push(waitReason)
             reason = waitReason
           }
@@ -634,8 +830,9 @@ class KubectlProxy {
       }
 
       if (phase === 'Pending' && status.conditions) {
-        const unschedulable = status.conditions.find((c: { type: string; status: string; reason?: string }) =>
-          c.type === 'PodScheduled' && c.status === 'False'
+        const unschedulable = status.conditions.find(
+          (c: { type: string; status: string; reason?: string }) =>
+            c.type === 'PodScheduled' && c.status === 'False',
         )
         if (unschedulable) {
           problems.push('Unschedulable')
@@ -667,11 +864,15 @@ class KubectlProxy {
   /**
    * Get events from a cluster
    */
-  async getEvents(context: string, namespace?: string, limit = 50): Promise<ClusterEvent[]> {
+  async getEvents(
+    context: string,
+    namespace?: string,
+    limit = 50,
+  ): Promise<ClusterEvent[]> {
     const nsArg = namespace ? ['-n', namespace] : ['-A']
     const response = await this.exec(
       ['get', 'events', ...nsArg, '--sort-by=.lastTimestamp', '-o', 'json'],
-      { context, timeout: KUBECTL_EXTENDED_TIMEOUT_MS }
+      { context, timeout: KUBECTL_EXTENDED_TIMEOUT_MS },
     )
 
     if (response.exitCode !== 0) {
@@ -684,17 +885,20 @@ class KubectlProxy {
     } catch {
       throw new Error('Failed to parse kubectl output as JSON')
     }
-    const events: ClusterEvent[] = (data.items || []).slice(-limit).reverse().map((e: KubeEvent) => ({
-      type: e.type,
-      reason: e.reason,
-      message: e.message,
-      object: `${e.involvedObject.kind}/${e.involvedObject.name}`,
-      namespace: e.metadata.namespace,
-      cluster: context,
-      count: e.count || 1,
-      firstSeen: e.firstTimestamp,
-      lastSeen: e.lastTimestamp,
-    }))
+    const events: ClusterEvent[] = (data.items || [])
+      .slice(-limit)
+      .reverse()
+      .map((e: KubeEvent) => ({
+        type: e.type,
+        reason: e.reason,
+        message: e.message,
+        object: `${e.involvedObject.kind}/${e.involvedObject.name}`,
+        namespace: e.metadata.namespace,
+        cluster: context,
+        count: e.count || 1,
+        firstSeen: e.firstTimestamp,
+        lastSeen: e.lastTimestamp,
+      }))
 
     return events
   }
@@ -702,9 +906,15 @@ class KubectlProxy {
   /**
    * Get deployments from a cluster
    */
-  async getDeployments(context: string, namespace?: string): Promise<Deployment[]> {
+  async getDeployments(
+    context: string,
+    namespace?: string,
+  ): Promise<Deployment[]> {
     const nsArg = namespace ? ['-n', namespace] : ['-A']
-    const response = await this.exec(['get', 'deployments', ...nsArg, '-o', 'json'], { context, timeout: KUBECTL_EXTENDED_TIMEOUT_MS })
+    const response = await this.exec(
+      ['get', 'deployments', ...nsArg, '-o', 'json'],
+      { context, timeout: KUBECTL_EXTENDED_TIMEOUT_MS },
+    )
 
     if (response.exitCode !== 0) {
       throw new Error(response.error || 'Failed to get deployments')
@@ -757,7 +967,7 @@ class KubectlProxy {
   async getBulkClusterHealth(
     contexts: string[],
     onProgress?: (health: ClusterHealth) => void,
-    concurrency = 5
+    concurrency = 5,
   ): Promise<ClusterHealth[]> {
     const results: ClusterHealth[] = []
     const queue = [...contexts]
@@ -770,11 +980,11 @@ class KubectlProxy {
 
         // Don't await here - let multiple run in parallel
         this.getClusterHealth(context)
-          .then(health => {
+          .then((health) => {
             results.push(health)
             onProgress?.(health)
           })
-          .catch(err => {
+          .catch((err) => {
             const errorHealth: ClusterHealth = {
               cluster: context,
               healthy: false,
@@ -782,7 +992,8 @@ class KubectlProxy {
               nodeCount: 0,
               readyNodes: 0,
               podCount: 0,
-              errorMessage: err instanceof Error ? err.message : 'Unknown error',
+              errorMessage:
+                err instanceof Error ? err.message : 'Unknown error',
             }
             results.push(errorHealth)
             onProgress?.(errorHealth)
@@ -805,7 +1016,7 @@ class KubectlProxy {
 
     // Wait for all to complete
     while (results.length < contexts.length) {
-      await new Promise(resolve => setTimeout(resolve, FOCUS_DELAY_MS))
+      await new Promise((resolve) => setTimeout(resolve, FOCUS_DELAY_MS))
     }
 
     return results
@@ -887,12 +1098,21 @@ interface KubeEvent {
 
 /** Shape of a Kubernetes Service object from `kubectl get services -o json` */
 interface KubeService {
-  metadata: { name: string; namespace: string; labels?: Record<string, string> }
+  metadata: {
+    name: string
+    namespace: string
+    labels?: Record<string, string>
+  }
   spec: {
     type: string
     clusterIP: string
     externalIPs?: string[]
-    ports?: Array<{ port: number; protocol: string; nodePort?: number; name?: string }>
+    ports?: Array<{
+      port: number
+      protocol: string
+      nodePort?: number
+      name?: string
+    }>
     selector?: Record<string, string>
   }
   status?: {
@@ -920,7 +1140,12 @@ export interface KubectlServiceResult {
 }
 
 interface KubeDeployment {
-  metadata: { name: string; namespace: string; labels?: Record<string, string>; annotations?: Record<string, string> }
+  metadata: {
+    name: string
+    namespace: string
+    labels?: Record<string, string>
+    annotations?: Record<string, string>
+  }
   spec: {
     replicas?: number
     template?: { spec?: { containers?: Array<{ image?: string }> } }
@@ -945,16 +1170,26 @@ function parseResourceQuantity(value: string | undefined): number {
   const num = parseFloat(match[1])
   const suffix = match[2]
   switch (suffix) {
-    case 'Ki': return num * 1024
-    case 'Mi': return num * 1024 * 1024
-    case 'Gi': return num * 1024 * 1024 * 1024
-    case 'Ti': return num * 1024 * 1024 * 1024 * 1024
-    case 'K': return num * 1000
-    case 'M': return num * 1000 * 1000
-    case 'G': return num * 1000 * 1000 * 1000
-    case 'T': return num * 1000 * 1000 * 1000 * 1000
-    case 'm': return num / 1000 // millicores
-    default: return num
+    case 'Ki':
+      return num * 1024
+    case 'Mi':
+      return num * 1024 * 1024
+    case 'Gi':
+      return num * 1024 * 1024 * 1024
+    case 'Ti':
+      return num * 1024 * 1024 * 1024 * 1024
+    case 'K':
+      return num * 1000
+    case 'M':
+      return num * 1000 * 1000
+    case 'G':
+      return num * 1000 * 1000 * 1000
+    case 'T':
+      return num * 1000 * 1000 * 1000 * 1000
+    case 'm':
+      return num / 1000 // millicores
+    default:
+      return num
   }
 }
 
