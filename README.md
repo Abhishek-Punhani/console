@@ -1,7 +1,7 @@
 # KubeStellar Console
 
 ![Coverage](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/clubanderson/b9a9ae8469f1897a22d5a40629bc1e82/raw/coverage-badge.json)
-[![ACMM](https://img.shields.io/endpoint?url=https%3A%2F%2Fconsole.kubestellar.io%2Fapi%2Facmm%2Fbadge%3Frepo%3Dkubestellar%252Fconsole&v=2)](https://console.kubestellar.io/acmm?repo=kubestellar%2Fconsole)
+[![ACMM](https://img.shields.io/endpoint?url=https%3A%2F%2Fconsole.kubestellar.io%2Fapi%2Facmm%2Fbadge%3Frepo%3Dkubestellar%252Fconsole&v=3&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxjaXJjbGUgY3g9IjExIiBjeT0iMTMiIHI9IjYiIGZpbGw9Im5vbmUiIHN0cm9rZT0id2hpdGUiIHN0cm9rZS13aWR0aD0iMS41Ii8%2BPGVsbGlwc2UgY3g9IjExIiBjeT0iMTMiIHJ4PSI2IiByeT0iMi41IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjEuMiIvPjxsaW5lIHgxPSI1IiB5MT0iMTMiIHgyPSIxNyIgeTI9IjEzIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjEuMiIvPjxsaW5lIHgxPSIxMSIgeTE9IjciIHgyPSIxMSIgeTI9IjE5IiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjEuMiIvPjxwb2x5Z29uIHBvaW50cz0iMTgsMiAxOS4yLDUuMiAyMi41LDUuMiAxOS45LDcuNCAyMSwxMC42IDE4LDguNiAxNSwxMC42IDE2LjEsNy40IDEzLjUsNS4yIDE2LjgsNS4yIi8%2BPC9zdmc%2B)](https://console.kubestellar.io/acmm?repo=kubestellar%2Fconsole)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/kubestellar/console/badge)](https://securityscorecards.dev/viewer/?uri=github.com/kubestellar/console)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12343/badge?v=2)](https://www.bestpractices.dev/projects/12343)
 
