@@ -2,20 +2,46 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
-  Cpu, TrendingUp, Coins, User, Bell, Shield,
-  Palette, Eye, Plug, LayoutGrid, Download, Database, Container, HardDrive,
-  CheckCircle, Loader2, AlertCircle, WifiOff, BarChart3, X } from 'lucide-react'
+  Cpu,
+  TrendingUp,
+  Coins,
+  User,
+  Bell,
+  Shield,
+  Palette,
+  Eye,
+  Plug,
+  LayoutGrid,
+  Download,
+  Database,
+  Container,
+  HardDrive,
+  CheckCircle,
+  Loader2,
+  AlertCircle,
+  WifiOff,
+  BarChart3,
+  X,
+} from 'lucide-react'
 import { Github } from '@/lib/icons'
 import { useAuth } from '../../lib/auth'
 import { useTheme } from '../../hooks/useTheme'
 import { useTokenUsage } from '../../hooks/useTokenUsage'
 import { useAIMode } from '../../hooks/useAIMode'
 import { useLocalAgent } from '../../hooks/useLocalAgent'
+import { useBackendHealth } from '../../hooks/useBackendHealth'
 import { useAccessibility } from '../../hooks/useAccessibility'
 import { useVersionCheck } from '../../hooks/useVersionCheck'
 import { usePredictionSettings } from '../../hooks/usePredictionSettings'
-import { usePersistedSettings, type SyncStatus } from '../../hooks/usePersistedSettings'
-import { BANNER_DISMISS_MS, UI_FEEDBACK_TIMEOUT_MS, TOOLTIP_HIDE_DELAY_MS } from '../../lib/constants/network'
+import {
+  usePersistedSettings,
+  type SyncStatus,
+} from '../../hooks/usePersistedSettings'
+import {
+  BANNER_DISMISS_MS,
+  UI_FEEDBACK_TIMEOUT_MS,
+  TOOLTIP_HIDE_DELAY_MS,
+} from '../../lib/constants/network'
 import { ROUTES } from '../../config/routes'
 import { UpdateSettings } from './UpdateSettings'
 import {
@@ -33,16 +59,21 @@ import {
   PersistenceSection,
   LocalClustersSection,
   SettingsBackupSection,
-  AnalyticsSection } from './sections'
+  AnalyticsSection,
+} from './sections'
 import { cn } from '../../lib/cn'
 
 // Labels are filled at render time via t()
-const SYNC_ICONS: Record<SyncStatus, { icon: typeof CheckCircle; className: string }> = {
-  idle:    { icon: CheckCircle, className: 'text-muted-foreground' },
-  saving:  { icon: Loader2,     className: 'text-yellow-400' },
-  saved:   { icon: CheckCircle, className: 'text-green-400' },
-  error:   { icon: AlertCircle, className: 'text-red-400' },
-  offline: { icon: WifiOff,     className: 'text-muted-foreground' } }
+const SYNC_ICONS: Record<
+  SyncStatus,
+  { icon: typeof CheckCircle; className: string }
+> = {
+  idle: { icon: CheckCircle, className: 'text-muted-foreground' },
+  saving: { icon: Loader2, className: 'text-yellow-400' },
+  saved: { icon: CheckCircle, className: 'text-green-400' },
+  error: { icon: AlertCircle, className: 'text-red-400' },
+  offline: { icon: WifiOff, className: 'text-muted-foreground' },
+}
 
 // Define settings navigation structure with groups
 // Labels use i18n keys resolved at render time
@@ -50,39 +81,108 @@ const SETTINGS_NAV = [
   {
     groupKey: 'settings.groups.aiIntelligence' as const,
     items: [
-      { id: 'ai-mode-settings', labelKey: 'settings.nav.aiMode' as const, icon: Cpu },
-      { id: 'prediction-settings', labelKey: 'settings.nav.predictions' as const, icon: TrendingUp },
-      { id: 'agent-settings', labelKey: 'settings.nav.localAgent' as const, icon: Plug },
-      { id: 'token-usage-settings', labelKey: 'settings.nav.tokenUsage' as const, icon: Coins },
-    ] },
+      {
+        id: 'ai-mode-settings',
+        labelKey: 'settings.nav.aiMode' as const,
+        icon: Cpu,
+      },
+      {
+        id: 'prediction-settings',
+        labelKey: 'settings.nav.predictions' as const,
+        icon: TrendingUp,
+      },
+      {
+        id: 'agent-settings',
+        labelKey: 'settings.nav.localAgent' as const,
+        icon: Plug,
+      },
+      {
+        id: 'token-usage-settings',
+        labelKey: 'settings.nav.tokenUsage' as const,
+        icon: Coins,
+      },
+    ],
+  },
   {
     groupKey: 'settings.groups.integrations' as const,
     items: [
-      { id: 'github-token-settings', labelKey: 'settings.nav.github' as const, icon: Github },
-      { id: 'widget-settings', labelKey: 'settings.nav.desktopWidget' as const, icon: LayoutGrid },
-      { id: 'persistence-settings', labelKey: 'settings.nav.deployPersistence' as const, icon: Database },
-    ] },
+      {
+        id: 'github-token-settings',
+        labelKey: 'settings.nav.github' as const,
+        icon: Github,
+      },
+      {
+        id: 'widget-settings',
+        labelKey: 'settings.nav.desktopWidget' as const,
+        icon: LayoutGrid,
+      },
+      {
+        id: 'persistence-settings',
+        labelKey: 'settings.nav.deployPersistence' as const,
+        icon: Database,
+      },
+    ],
+  },
   {
     groupKey: 'settings.groups.userAlerts' as const,
     items: [
-      { id: 'profile-settings', labelKey: 'settings.nav.profile' as const, icon: User },
-      { id: 'notifications-settings', labelKey: 'settings.nav.notifications' as const, icon: Bell },
-    ] },
+      {
+        id: 'profile-settings',
+        labelKey: 'settings.nav.profile' as const,
+        icon: User,
+      },
+      {
+        id: 'notifications-settings',
+        labelKey: 'settings.nav.notifications' as const,
+        icon: Bell,
+      },
+    ],
+  },
   {
     groupKey: 'settings.groups.appearance' as const,
     items: [
-      { id: 'theme-settings', labelKey: 'settings.nav.theme' as const, icon: Palette },
-      { id: 'accessibility-settings', labelKey: 'settings.nav.accessibility' as const, icon: Eye },
-    ] },
+      {
+        id: 'theme-settings',
+        labelKey: 'settings.nav.theme' as const,
+        icon: Palette,
+      },
+      {
+        id: 'accessibility-settings',
+        labelKey: 'settings.nav.accessibility' as const,
+        icon: Eye,
+      },
+    ],
+  },
   {
     groupKey: 'settings.groups.utilities' as const,
     items: [
-      { id: 'settings-backup', labelKey: 'settings.nav.backupSync' as const, icon: HardDrive },
-      { id: 'local-clusters-settings', labelKey: 'settings.nav.localClusters' as const, icon: Container },
-      { id: 'permissions-settings', labelKey: 'settings.nav.permissions' as const, icon: Shield },
-      { id: 'analytics-settings', labelKey: 'settings.nav.analytics' as const, icon: BarChart3 },
-      { id: 'system-updates-settings', labelKey: 'settings.nav.updates' as const, icon: Download },
-    ] },
+      {
+        id: 'settings-backup',
+        labelKey: 'settings.nav.backupSync' as const,
+        icon: HardDrive,
+      },
+      {
+        id: 'local-clusters-settings',
+        labelKey: 'settings.nav.localClusters' as const,
+        icon: Container,
+      },
+      {
+        id: 'permissions-settings',
+        labelKey: 'settings.nav.permissions' as const,
+        icon: Shield,
+      },
+      {
+        id: 'analytics-settings',
+        labelKey: 'settings.nav.analytics' as const,
+        icon: BarChart3,
+      },
+      {
+        id: 'system-updates-settings',
+        labelKey: 'settings.nav.updates' as const,
+        icon: Download,
+      },
+    ],
+  },
 ]
 
 export function Settings() {
@@ -94,10 +194,29 @@ export function Settings() {
   const { usage, updateSettings, resetUsage, isDemoData } = useTokenUsage()
   const { mode, setMode, description } = useAIMode()
   const { health, isConnected, refresh } = useLocalAgent()
-  const { colorBlindMode, setColorBlindMode, reduceMotion, setReduceMotion, highContrast, setHighContrast } = useAccessibility()
+  const { isInClusterMode } = useBackendHealth()
+  const {
+    colorBlindMode,
+    setColorBlindMode,
+    reduceMotion,
+    setReduceMotion,
+    highContrast,
+    setHighContrast,
+  } = useAccessibility()
   const { forceCheck: forceVersionCheck } = useVersionCheck()
-  const { settings: predictionSettings, updateSettings: updatePredictionSettings, resetSettings: resetPredictionSettings } = usePredictionSettings()
-  const { restoredFromFile, syncStatus, lastSaved, filePath, exportSettings, importSettings } = usePersistedSettings()
+  const {
+    settings: predictionSettings,
+    updateSettings: updatePredictionSettings,
+    resetSettings: resetPredictionSettings,
+  } = usePredictionSettings()
+  const {
+    restoredFromFile,
+    syncStatus,
+    lastSaved,
+    filePath,
+    exportSettings,
+    importSettings,
+  } = usePersistedSettings()
 
   const [activeSection, setActiveSection] = useState<string>('ai-mode-settings')
   const [showRestoredToast, setShowRestoredToast] = useState(false)
@@ -130,7 +249,10 @@ export function Settings() {
   useEffect(() => {
     if (restoredFromFile) {
       setShowRestoredToast(true)
-      const timer = setTimeout(() => setShowRestoredToast(false), BANNER_DISMISS_MS)
+      const timer = setTimeout(
+        () => setShowRestoredToast(false),
+        BANNER_DISMISS_MS,
+      )
       return () => clearTimeout(timer)
     }
   }, [restoredFromFile])
@@ -147,7 +269,8 @@ export function Settings() {
     if (!element || !container) return
     const containerRect = container.getBoundingClientRect()
     const elementRect = element.getBoundingClientRect()
-    const y = elementRect.top - containerRect.top + container.scrollTop - SCROLL_OFFSET
+    const y =
+      elementRect.top - containerRect.top + container.scrollTop - SCROLL_OFFSET
     container.scrollTo({ top: y, behavior: smooth ? 'smooth' : 'auto' })
   }, [])
 
@@ -173,12 +296,17 @@ export function Settings() {
         // Suppress observer while deep-link scroll settles
         isNavScrollingRef.current = true
         if (navScrollTimerRef.current) clearTimeout(navScrollTimerRef.current)
-        navScrollTimerRef.current = setTimeout(() => { isNavScrollingRef.current = false }, NAV_SCROLL_SUPPRESS_MS)
+        navScrollTimerRef.current = setTimeout(() => {
+          isNavScrollingRef.current = false
+        }, NAV_SCROLL_SUPPRESS_MS)
 
         scrollToSection(hash, false)
         setActiveSection(hash)
         element.classList.add('ring-2', 'ring-purple-500/50')
-        setTimeout(() => element.classList.remove('ring-2', 'ring-purple-500/50'), UI_FEEDBACK_TIMEOUT_MS)
+        setTimeout(
+          () => element.classList.remove('ring-2', 'ring-purple-500/50'),
+          UI_FEEDBACK_TIMEOUT_MS,
+        )
       } else if (++attempts < maxAttempts) {
         requestAnimationFrame(tryScroll)
       }
@@ -193,7 +321,7 @@ export function Settings() {
     const container = getScrollContainer()
     if (!container) return
 
-    const allSectionIds = SETTINGS_NAV.flatMap(g => g.items.map(i => i.id))
+    const allSectionIds = SETTINGS_NAV.flatMap((g) => g.items.map((i) => i.id))
     const visibleSections = new Map<string, number>()
 
     const observer = new IntersectionObserver(
@@ -222,7 +350,8 @@ export function Settings() {
       {
         root: container,
         rootMargin: '0px 0px -40% 0px',
-        threshold: [0, 0.1, 0.5] }
+        threshold: [0, 0.1, 0.5],
+      },
     )
 
     for (const id of allSectionIds) {
@@ -237,7 +366,9 @@ export function Settings() {
     // Suppress IntersectionObserver while the smooth scroll animates
     isNavScrollingRef.current = true
     if (navScrollTimerRef.current) clearTimeout(navScrollTimerRef.current)
-    navScrollTimerRef.current = setTimeout(() => { isNavScrollingRef.current = false }, NAV_SCROLL_SUPPRESS_MS)
+    navScrollTimerRef.current = setTimeout(() => {
+      isNavScrollingRef.current = false
+    }, NAV_SCROLL_SUPPRESS_MS)
 
     scrollToSection(sectionId)
     setActiveSection(sectionId)
@@ -250,14 +381,23 @@ export function Settings() {
     // scrollToSection above. Instead, manually scroll only the sidebar's
     // own overflow container so #main-content is unaffected.
     requestAnimationFrame(() => {
-      const btn = document.querySelector<HTMLElement>(`[data-settings-nav="${sectionId}"]`)
+      const btn = document.querySelector<HTMLElement>(
+        `[data-settings-nav="${sectionId}"]`,
+      )
       if (!btn) return
       const sidebar = btn.closest<HTMLElement>('.overflow-y-auto')
       if (!sidebar || sidebar.id === 'main-content') return
       const btnRect = btn.getBoundingClientRect()
       const sidebarRect = sidebar.getBoundingClientRect()
-      if (btnRect.top < sidebarRect.top || btnRect.bottom > sidebarRect.bottom) {
-        const scrollDelta = btnRect.top - sidebarRect.top - sidebarRect.height / 2 + btnRect.height / 2
+      if (
+        btnRect.top < sidebarRect.top ||
+        btnRect.bottom > sidebarRect.bottom
+      ) {
+        const scrollDelta =
+          btnRect.top -
+          sidebarRect.top -
+          sidebarRect.height / 2 +
+          btnRect.height / 2
         sidebar.scrollBy({ top: scrollDelta, behavior: 'smooth' })
       }
     })
@@ -268,13 +408,17 @@ export function Settings() {
     saving: t('settings.syncStatus.saving'),
     saved: t('settings.syncStatus.savedToFile'),
     error: t('settings.syncStatus.saveFailed'),
-    offline: t('settings.syncStatus.localOnly') }
+    offline: t('settings.syncStatus.localOnly'),
+  }
   const sync = SYNC_ICONS[syncStatus]
   const SyncIcon = sync.icon
   const syncLabel = SYNC_LABELS[syncStatus]
 
   return (
-    <div data-testid="settings-page" className="pt-16 max-w-6xl mx-auto flex gap-6">
+    <div
+      data-testid="settings-page"
+      className="pt-16 max-w-6xl mx-auto flex gap-6"
+    >
       {/* Settings restored toast */}
       {showRestoredToast && (
         <div className="fixed top-20 right-4 z-toast bg-green-500/20 border border-green-500/30 text-green-400 px-4 py-2 rounded-lg text-sm shadow-lg backdrop-blur-sm animate-in slide-in-from-right">
@@ -286,7 +430,12 @@ export function Settings() {
         <div className="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto scroll-enhanced space-y-4">
           <div className="mb-4">
             <div className="flex items-center justify-between">
-              <h1 data-testid="settings-title" className="text-xl font-bold text-foreground">{t('settings.title')}</h1>
+              <h1
+                data-testid="settings-title"
+                className="text-xl font-bold text-foreground"
+              >
+                {t('settings.title')}
+              </h1>
               <button
                 data-testid="settings-close-desktop"
                 onClick={handleClose}
@@ -296,9 +445,21 @@ export function Settings() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <p className="text-sm text-muted-foreground">{t('settings.subtitle')}</p>
-            <div className={cn('flex items-center gap-1.5 mt-2 text-xs', sync.className)}>
-              <SyncIcon className={cn('w-3.5 h-3.5', syncStatus === 'saving' && 'animate-spin')} />
+            <p className="text-sm text-muted-foreground">
+              {t('settings.subtitle')}
+            </p>
+            <div
+              className={cn(
+                'flex items-center gap-1.5 mt-2 text-xs',
+                sync.className,
+              )}
+            >
+              <SyncIcon
+                className={cn(
+                  'w-3.5 h-3.5',
+                  syncStatus === 'saving' && 'animate-spin',
+                )}
+              />
               <span>{syncLabel}</span>
             </div>
           </div>
@@ -320,10 +481,17 @@ export function Settings() {
                         'w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors text-left',
                         isActive
                           ? 'bg-purple-500/20 text-purple-400'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50',
                       )}
                     >
-                      <Icon className={cn('w-4 h-4 shrink-0', isActive ? 'text-purple-400' : 'text-muted-foreground')} />
+                      <Icon
+                        className={cn(
+                          'w-4 h-4 shrink-0',
+                          isActive
+                            ? 'text-purple-400'
+                            : 'text-muted-foreground',
+                        )}
+                      />
                       <span className="truncate">{t(item.labelKey)}</span>
                     </button>
                   )
@@ -339,7 +507,12 @@ export function Settings() {
         {/* Mobile Header */}
         <div className="lg:hidden mb-6">
           <div className="flex items-center justify-between">
-            <h1 data-testid="settings-title-mobile" className="text-2xl font-bold text-foreground">{t('settings.title')}</h1>
+            <h1
+              data-testid="settings-title-mobile"
+              className="text-2xl font-bold text-foreground"
+            >
+              {t('settings.title')}
+            </h1>
             <button
               data-testid="settings-close-mobile"
               onClick={handleClose}
@@ -350,8 +523,18 @@ export function Settings() {
             </button>
           </div>
           <p className="text-muted-foreground">{t('settings.subtitle')}</p>
-          <div className={cn('flex items-center gap-1.5 mt-2 text-xs', sync.className)}>
-            <SyncIcon className={cn('w-3.5 h-3.5', syncStatus === 'saving' && 'animate-spin')} />
+          <div
+            className={cn(
+              'flex items-center gap-1.5 mt-2 text-xs',
+              sync.className,
+            )}
+          >
+            <SyncIcon
+              className={cn(
+                'w-3.5 h-3.5',
+                syncStatus === 'saving' && 'animate-spin',
+              )}
+            />
             <span>{syncLabel}</span>
           </div>
         </div>
@@ -362,14 +545,28 @@ export function Settings() {
             {t('settings.groups.aiIntelligence')}
           </h2>
           <div className="space-y-6">
-            <AISettingsSection mode={mode} setMode={setMode} description={description} />
+            <AISettingsSection
+              mode={mode}
+              setMode={setMode}
+              description={description}
+            />
             <PredictionSettingsSection
               settings={predictionSettings}
               updateSettings={updatePredictionSettings}
               resetSettings={resetPredictionSettings}
             />
-            <AgentSection isConnected={isConnected} health={health} refresh={refresh} />
-            <TokenUsageSection usage={usage} updateSettings={updateSettings} resetUsage={resetUsage} isDemoData={isDemoData} />
+            <AgentSection
+              isConnected={isConnected}
+              isInClusterMode={isInClusterMode}
+              health={health}
+              refresh={refresh}
+            />
+            <TokenUsageSection
+              usage={usage}
+              updateSettings={updateSettings}
+              resetUsage={resetUsage}
+              isDemoData={isDemoData}
+            />
           </div>
         </div>
 

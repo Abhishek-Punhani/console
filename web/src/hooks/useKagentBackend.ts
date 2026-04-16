@@ -38,6 +38,8 @@ export interface UseKagentBackendResult {
   setPreferredBackend: (backend: AgentBackendType) => void
   /** The active backend (based on preference + availability) */
   activeBackend: AgentBackendType
+  /** True once the first status poll has completed */
+  hasPolled: boolean
   /** Refresh all statuses */
   refresh: () => void
 }
@@ -52,6 +54,9 @@ export function useKagentBackend(): UseKagentBackendResult {
   const [kagentiStatus, setKagentiStatus] = useState<KagentiProviderStatus | null>(null)
   const [kagentiAgents, setKagentiAgents] = useState<KagentiProviderAgent[]>([])
   const [selectedKagentiAgent, setSelectedKagentiAgent] = useState<KagentiProviderAgent | null>(null)
+
+  // Track whether the first status poll has finished (to avoid blinking activeBackend)
+  const [hasPolled, setHasPolled] = useState(false)
 
   const [preferredBackend, setPreferredBackendState] = useState<AgentBackendType>(() => {
     const saved = localStorage.getItem(BACKEND_PREF_KEY)
@@ -73,8 +78,6 @@ export function useKagentBackend(): UseKagentBackendResult {
     if (refreshInFlightRef.current) return
     refreshInFlightRef.current = true
     try {
-      // Poll kagent and kagenti concurrently — independent fetch chains
-      // should not block each other
       const [kStatus, kiStatus] = await Promise.all([
         fetchKagentStatus(),
         fetchKagentiProviderStatus(),
@@ -110,6 +113,7 @@ export function useKagentBackend(): UseKagentBackendResult {
       }
     } finally {
       refreshInFlightRef.current = false
+      setHasPolled(true)
     }
   }, [])
 
@@ -137,7 +141,10 @@ export function useKagentBackend(): UseKagentBackendResult {
   const kagentAvailable = kagentStatus?.available ?? false
   const kagentiAvailable = kagentiStatus?.available ?? false
 
+  // Use stored preference before the first poll completes to avoid activeBackend
+  // snapping to kc-agent while kagentiAvailable is still false.
   const activeBackend: AgentBackendType =
+    !hasPolled ? preferredBackend :
     preferredBackend === 'kagenti' && kagentiAvailable ? 'kagenti' :
     preferredBackend === 'kagent' && kagentAvailable ? 'kagent' :
     'kc-agent'
@@ -156,5 +163,6 @@ export function useKagentBackend(): UseKagentBackendResult {
     preferredBackend,
     setPreferredBackend,
     activeBackend,
+    hasPolled,
     refresh }
 }

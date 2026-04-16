@@ -33,6 +33,12 @@ spec:
           protocol: TCP
         - port: 6443
           protocol: TCP
+    {{- if and .Values.kagenti.enabled .Values.kagenti.allowNetworkPolicyEgress }}
+    # Allow connection to in-cluster Kagenti controller service
+    - ports:
+        - port: {{ .Values.kagenti.servicePort }}
+          protocol: TCP
+    {{- end }}
     {{- with .Values.networkPolicy.extraEgress }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
