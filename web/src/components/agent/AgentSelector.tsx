@@ -21,17 +21,21 @@ import { AgentIcon } from "./AgentIcon";
 import type { AgentInfo, AgentProvider } from "../../types/agent";
 
 /** Timeout (ms) for fetching mission install guide files from the API */
-const MISSION_FILE_FETCH_TIMEOUT_MS = 5_000
-import { PROVIDER_PREREQUISITES } from '../../types/agent'
-import type { MissionExport } from '../../lib/missions/types'
-import { cn } from '../../lib/cn'
-import { useModalState } from '../../lib/modals'
-import { safeGetItem, safeSetItem } from '../../lib/utils/localStorage'
+const MISSION_FILE_FETCH_TIMEOUT_MS = 5_000;
+import { PROVIDER_PREREQUISITES} from "../../types/agent";
+import type { MissionExport } from "../../lib/missions/types";
+import { cn } from "../../lib/cn";
+import { useModalState } from "../../lib/modals";
+import { safeGetItem, safeSetItem } from "../../lib/utils/localStorage";
 import { sanitizeUrl } from '../../lib/utils/sanitizeUrl'
-import { AgentApprovalDialog, hasApprovedAgents } from './AgentApprovalDialog'
-import { MissionDetailView } from '../missions/MissionDetailView'
-import { ClusterSelectionDialog } from '../missions/ClusterSelectionDialog'
-import { CLUSTER_PROVIDER_KEYS, buildVisibleAgents, sectionAgents } from './agentSelectorUtils'
+import { AgentApprovalDialog, hasApprovedAgents } from "./AgentApprovalDialog";
+import { MissionDetailView } from "../missions/MissionDetailView";
+import { ClusterSelectionDialog } from "../missions/ClusterSelectionDialog";
+import {
+  CLUSTER_PROVIDER_KEYS,
+  buildVisibleAgents,
+  sectionAgents,
+} from "./agentSelectorUtils";
 
 /** Map agent names to their backend provider key for prerequisite lookup */
 const AGENT_TO_PROVIDER_KEY: Record<string, string> = {
