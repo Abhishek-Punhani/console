@@ -18,11 +18,11 @@ import { useDemoMode, getDemoMode } from "../../hooks/useDemoMode";
 import { useKagentBackend } from "../../hooks/useKagentBackend";
 import { useProviderConnection } from "../../hooks/useProviderConnection";
 import { AgentIcon } from "./AgentIcon";
-import type { AgentInfo, AgentProvider } from "../../types/agent";
-
-/** Timeout (ms) for fetching mission install guide files from the API */
-const MISSION_FILE_FETCH_TIMEOUT_MS = 5_000;
-import { PROVIDER_PREREQUISITES } from "../../types/agent";
+import {
+  PROVIDER_PREREQUISITES,
+  type AgentInfo,
+  type AgentProvider,
+} from "../../types/agent";
 import type { MissionExport } from "../../lib/missions/types";
 import { cn } from "../../lib/cn";
 import { useModalState } from "../../lib/modals";
@@ -35,6 +35,9 @@ import {
   buildVisibleAgents,
   sectionAgents,
 } from "./agentSelectorUtils";
+
+/** Timeout (ms) for fetching mission install guide files from the API */
+const MISSION_FILE_FETCH_TIMEOUT_MS = 5_000;
 
 /** Map agent names to their backend provider key for prerequisite lookup */
 const AGENT_TO_PROVIDER_KEY: Record<string, string> = {

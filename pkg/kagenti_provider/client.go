@@ -252,7 +252,17 @@ func (c *KagentiClient) Invoke(ctx context.Context, namespace, agentName, messag
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
 
-	httpClient := &http.Client{} // no timeout — let caller cancel via ctx
+	// Reuse configured client settings (transport/TLS/proxy) and disable timeout
+	// so long-running streams are controlled by ctx cancellation.
+	httpClient := c.httpClient
+	if httpClient == nil {
+		httpClient = &http.Client{}
+	} else {
+		clone := *httpClient
+		clone.Timeout = 0
+		httpClient = &clone
+	}
+
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("kagenti invoke failed: %w", err)
