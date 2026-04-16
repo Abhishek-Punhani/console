@@ -289,6 +289,36 @@ spec:
             - name: SELF_UPGRADE_ENABLED
               value: "true"
             {{- end }}
+            {{- if .Values.kagenti.enabled }}
+            {{- if .Values.kagenti.forceDefaultAgent }}
+            - name: DEFAULT_AGENT
+              value: "kagenti"
+            {{- end }}
+            {{- if .Values.kagenti.controllerUrl }}
+            - name: KAGENTI_CONTROLLER_URL
+              value: {{ .Values.kagenti.controllerUrl | quote }}
+            {{- end }}
+            - name: KAGENTI_NAMESPACE
+              value: {{ .Values.kagenti.namespace | quote }}
+            - name: KAGENTI_SERVICE_NAME
+              value: {{ .Values.kagenti.serviceName | quote }}
+            - name: KAGENTI_SERVICE_PORT
+              value: {{ .Values.kagenti.servicePort | quote }}
+            - name: KAGENTI_SERVICE_PROTOCOL
+              value: {{ .Values.kagenti.serviceProtocol | quote }}
+            {{- if .Values.kagenti.directAgentUrl }}
+            - name: KAGENTI_AGENT_URL
+              value: {{ .Values.kagenti.directAgentUrl | quote }}
+            {{- end }}
+            {{- if .Values.kagenti.directAgentName }}
+            - name: KAGENTI_AGENT_NAME
+              value: {{ .Values.kagenti.directAgentName | quote }}
+            {{- end }}
+            {{- if .Values.kagenti.directAgentNamespace }}
+            - name: KAGENTI_AGENT_NAMESPACE
+              value: {{ .Values.kagenti.directAgentNamespace | quote }}
+            {{- end }}
+            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

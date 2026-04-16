@@ -289,6 +289,11 @@ func InitializeProviders() error {
 	registry.Register(NewClaudeCodeProvider())
 	registry.Register(NewBobProvider())
 
+	// Register in-cluster Kagenti agent (preferred when in-cluster)
+	if p := NewKagentiProvider(); p != nil {
+		registry.Register(p)
+	}
+
 	// Register CLI-based tool-capable agents
 	registry.Register(NewCodexProvider())
 	registry.Register(NewGeminiCLIProvider())

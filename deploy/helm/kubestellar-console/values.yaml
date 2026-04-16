@@ -264,3 +264,38 @@ selfUpgrade:
 
 # Additional environment variables
 extraEnv: []
+
+# Kagenti integration (optional)
+# Enable this section when the console should connect to an in-cluster Kagenti
+# controller and/or a direct Kagenti agent service.
+#
+# Controller mode (recommended):
+#   - enable: true
+#   - set controllerUrl/service values
+#
+# Direct agent mode (optional, overrides controller discovery):
+#   - set directAgentUrl to a service URL
+#   - optionally set directAgentName/directAgentNamespace for UI metadata
+kagenti:
+  enabled: false
+
+  # Force Kagenti as the default AI agent when enabled.
+  # This sets DEFAULT_AGENT=kagenti in the backend container.
+  forceDefaultAgent: true
+
+  # If NetworkPolicy is enabled, also add a default egress rule to the
+  # Kagenti controller port. Disable if you prefer managing egress via
+  # networkPolicy.extraEgress explicitly.
+  allowNetworkPolicyEgress: true
+
+  # Controller mode settings
+  controllerUrl: ""
+  namespace: "kagenti-system"
+  serviceName: "kagenti-backend"
+  servicePort: "8000"
+  serviceProtocol: "http"
+
+  # Direct agent mode settings (optional)
+  directAgentUrl: ""
+  directAgentName: ""
+  directAgentNamespace: ""
