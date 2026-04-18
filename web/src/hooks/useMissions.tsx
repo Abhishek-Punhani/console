@@ -10,6 +10,7 @@ import { emitMissionStarted, emitMissionCompleted, emitMissionError, emitMission
 import { scanForMaliciousContent } from '../lib/missions/scanner/malicious'
 import { runPreflightCheck, type PreflightError, type PreflightResult } from '../lib/missions/preflightCheck'
 import { kubectlProxy } from '../lib/kubectlProxy'
+import { kagentiProviderChat, fetchKagentiProviderAgents } from '../lib/kagentiProviderBackend'
 import { ConfirmMissionPromptDialog } from '../components/missions/ConfirmMissionPromptDialog'
 
 export type MissionStatus = 'pending' | 'running' | 'waiting_input' | 'completed' | 'failed' | 'saved' | 'blocked' | 'cancelling' | 'cancelled'
@@ -222,6 +223,7 @@ const MISSIONS_STORAGE_KEY = 'kc_missions'
 const CROSS_TAB_ECHO_IGNORE_MS = 5
 const UNREAD_MISSIONS_KEY = 'kc_unread_missions'
 const SELECTED_AGENT_KEY = 'kc_selected_agent'
+const KAGENTI_SELECTED_AGENT_KEY = 'kc_kagenti_selected_agent'
 
 /**
  * #7089 — Monotonic counter for generating unique request IDs. The previous
@@ -246,6 +248,18 @@ let messageIdCounter = 0
 function generateMessageId(suffix = ''): string {
   messageIdCounter += 1
   return `msg-${Date.now()}-${messageIdCounter}${suffix ? `-${suffix}` : ''}`
+}
+
+function getSelectedKagentiAgentFromStorage(): { name: string; namespace: string } | null {
+  try {
+    const value = localStorage.getItem(KAGENTI_SELECTED_AGENT_KEY)
+    if (!value) return null
+    const [namespace, name] = value.split('/')
+    if (!namespace || !name) return null
+    return { namespace, name }
+  } catch {
+    return null
+  }
 }
 
 /** Delay before auto-reconnecting interrupted missions after WS opens */
@@ -2487,6 +2501,7 @@ The WebSocket connection to the agent at \`${LOCAL_AGENT_WS_URL}\` was lost and 
     enhancedPrompt: string,
     params: { context?: Record<string, unknown>; type?: string; dryRun?: boolean },
   ) => {
+    const missionType = params.type || 'custom'
     // #6384 item 1 (dup of #6381) — if a cancel intent is already set for
     // this missionId we must not clear it and proceed to send. This
     // scenario happens when the user clicks Cancel after preflightAndExecute
@@ -2510,6 +2525,151 @@ The WebSocket connection to the agent at \`${LOCAL_AGENT_WS_URL}\` was lost and 
     // `preflightAndExecute`, which checks above; `startMission` reaches
     // this point with a fresh mission ID and an empty cancelIntents entry.
     cancelIntents.current.delete(missionId)
+
+    // Route Kagenti-selected missions through backend SSE proxy instead of
+    // local-agent WebSocket, so in-cluster deployments work without kc-agent.
+    if (selectedAgentRef.current === 'kagenti') {
+      const startedAt = Date.now()
+      const assistantMessageId = generateMessageId('kagenti-stream')
+
+      setMissions(prev => prev.map(m =>
+        m.id === missionId
+          ? { ...m, status: 'running', currentStep: 'Connecting to kagenti...' }
+          : m
+      ))
+
+      void (async () => {
+        let target = getSelectedKagentiAgentFromStorage()
+        if (!target) {
+          const discovered = await fetchKagentiProviderAgents()
+          if ((discovered || []).length > 0) {
+            target = {
+              namespace: discovered[0].namespace,
+              name: discovered[0].name,
+            }
+          }
+        }
+
+        if (!target) {
+          executingMissions.current.delete(missionId)
+          const errorContent = `**Kagenti Agent Not Selected**\n\nSelect a Kagenti agent in Settings → Agent Backend, then retry this mission.`
+          setMissions(prev => prev.map(m =>
+            m.id === missionId
+              ? {
+                  ...m,
+                  status: 'failed',
+                  currentStep: undefined,
+                  messages: [
+                    ...m.messages,
+                    {
+                      id: generateMessageId('kagenti-missing-agent'),
+                      role: 'system',
+                      content: errorContent,
+                      timestamp: new Date(),
+                    },
+                  ],
+                }
+              : m
+          ))
+          emitMissionError(missionType, 'kagenti_agent_missing', 'no_selected_kagenti_agent')
+          return
+        }
+
+        await kagentiProviderChat(target.name, target.namespace, enhancedPrompt, {
+          contextId: missionId,
+          onChunk: (text: string) => {
+            setMissions(prev => prev.map(m => {
+              if (m.id !== missionId) return m
+
+              const idx = m.messages.findIndex(msg => msg.id === assistantMessageId)
+              if (idx === -1) {
+                return {
+                  ...m,
+                  currentStep: `Processing with ${selectedAgentRef.current || 'kagenti'}...`,
+                  messages: [
+                    ...m.messages,
+                    {
+                      id: assistantMessageId,
+                      role: 'assistant',
+                      content: text,
+                      timestamp: new Date(),
+                      agent: selectedAgentRef.current || 'kagenti',
+                    },
+                  ],
+                }
+              }
+
+              const nextMessages = [...m.messages]
+              nextMessages[idx] = {
+                ...nextMessages[idx],
+                content: `${nextMessages[idx].content}${text}`,
+                timestamp: new Date(),
+              }
+              return {
+                ...m,
+                currentStep: `Processing with ${selectedAgentRef.current || 'kagenti'}...`,
+                messages: nextMessages,
+              }
+            }))
+          },
+          onDone: () => {
+            executingMissions.current.delete(missionId)
+            const durationMs = Math.max(0, Date.now() - startedAt)
+            emitMissionCompleted(missionType, durationMs)
+
+            setMissions(prev => prev.map(m => {
+              if (m.id !== missionId) return m
+
+              const hasAssistant = m.messages.some(msg => msg.id === assistantMessageId && msg.content.trim().length > 0)
+              return {
+                ...m,
+                status: 'completed',
+                currentStep: undefined,
+                updatedAt: new Date(),
+                messages: hasAssistant
+                  ? m.messages
+                  : [
+                      ...m.messages,
+                      {
+                        id: assistantMessageId,
+                        role: 'assistant',
+                        content: 'Task completed.',
+                        timestamp: new Date(),
+                        agent: selectedAgentRef.current || 'kagenti',
+                      },
+                    ],
+              }
+            }))
+          },
+          onError: (error: string) => {
+            executingMissions.current.delete(missionId)
+            emitMissionError(missionType, 'kagenti_chat_error', error)
+
+            setMissions(prev => prev.map(m =>
+              m.id === missionId
+                ? {
+                    ...m,
+                    status: 'failed',
+                    currentStep: undefined,
+                    updatedAt: new Date(),
+                    messages: [
+                      ...m.messages,
+                      {
+                        id: generateMessageId('kagenti-error'),
+                        role: 'system',
+                        content: `**Kagenti Request Failed**\n\n${error}`,
+                        timestamp: new Date(),
+                      },
+                    ],
+                  }
+                : m
+            ))
+          },
+        })
+      })()
+
+      return
+    }
 
     // Send to agent
     ensureConnection().then(() => {
