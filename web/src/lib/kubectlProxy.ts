@@ -11,6 +11,7 @@ import {
   LOCAL_AGENT_WS_URL,
   WS_CONNECT_TIMEOUT_MS,
   WS_CONNECTION_COOLDOWN_MS,
+  BACKEND_HEALTH_CHECK_TIMEOUT_MS,
   KUBECTL_DEFAULT_TIMEOUT_MS,
   KUBECTL_EXTENDED_TIMEOUT_MS,
   KUBECTL_MAX_TIMEOUT_MS,
@@ -92,7 +93,7 @@ class KubectlProxy {
       const res = await fetch('/health', {
         method: 'GET',
         headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(1200),
+        signal: AbortSignal.timeout(BACKEND_HEALTH_CHECK_TIMEOUT_MS),
       })
       if (res.ok) {
         const data = (await res.json().catch(() => null)) as {

@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+const kagentiProviderTestTimeout = 2 * time.Second
+
 func TestKagentiProvider_Interfaces(t *testing.T) {
 	var _ AIProvider = &KagentiProvider{}
 	var _ StreamingProvider = &KagentiProvider{}
@@ -22,7 +24,7 @@ func TestKagentiProvider_Handshake_ConnectionRefused(t *testing.T) {
 
 	p := NewKagentiProvider()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), kagentiProviderTestTimeout)
 	defer cancel()
 
 	result := p.Handshake(ctx)
@@ -71,7 +73,7 @@ func TestKagentiProvider_Handshake_ControllerAPI(t *testing.T) {
 	t.Setenv("KAGENTI_CONTROLLER_URL", server.URL)
 	p := NewKagentiProvider()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), kagentiProviderTestTimeout)
 	defer cancel()
 
 	result := p.Handshake(ctx)
@@ -104,7 +106,7 @@ func TestKagentiProvider_DirectAgent_StreamChat(t *testing.T) {
 	t.Setenv("KAGENTI_AGENT_NAMESPACE", "")
 	p := NewKagentiProvider()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), kagentiProviderTestTimeout)
 	defer cancel()
 
 	h := p.Handshake(ctx)
@@ -141,7 +143,7 @@ func TestKagentiProvider_Handshake_HealthzFallback(t *testing.T) {
 	t.Setenv("KAGENTI_CONTROLLER_URL", server.URL)
 	p := NewKagentiProvider()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), kagentiProviderTestTimeout)
 	defer cancel()
 
 	result := p.Handshake(ctx)
