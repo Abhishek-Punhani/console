@@ -12,6 +12,36 @@ import (
 	"time"
 )
 
+const (
+	defaultClientTimeout        = 30 * time.Second
+	defaultDetectTimeout        = 3 * time.Second
+	defaultKagentiNamespace     = "kagenti-system"
+	defaultKagentiServiceName   = "kagenti-backend"
+	defaultKagentiServicePort   = "8000"
+	legacyKagentiServiceName    = "kagenti-controller"
+	legacyKagentiServicePort    = "8083"
+	defaultKagentiServiceScheme = "http"
+	defaultDirectAgentName      = "kagenti-agent"
+	defaultDirectAgentNamespace = "default"
+)
+
+var (
+	kagentiHealthPaths = []string{"/health", "/healthz", "/api/health"}
+
+	// Keep both legacy and newer list paths for cross-version compatibility.
+	kagentiListAgentPaths = []string{"/api/v1/agents", "/api/agents"}
+
+	kagentiDirectCardPaths = []string{"/.well-known/agent-card.json", "/.well-known/agent.json"}
+
+	kagentiDirectStreamPaths = []string{"/api/chat/stream", "/chat/stream", "/stream"}
+
+	// Keep both legacy and newer controller chat paths.
+	kagentiControllerStreamPathPatterns = []string{
+		"/api/v1/chat/%s/%s/stream",
+		"/api/chat/%s/%s/stream",
+	}
+)
+
 // AgentInfo describes a kagenti agent discovered via the platform.
 type AgentInfo struct {
 	Name        string   `json:"name"`
@@ -43,7 +73,7 @@ func NewKagentiClient(baseURL string) *KagentiClient {
 	return &KagentiClient{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: defaultClientTimeout,
 		},
 	}
 }
@@ -58,7 +88,7 @@ func NewKagentiClientFromEnv() *KagentiClient {
 			directAgentName:      os.Getenv("KAGENTI_AGENT_NAME"),
 			directAgentNamespace: os.Getenv("KAGENTI_AGENT_NAMESPACE"),
 			httpClient: &http.Client{
-				Timeout: 30 * time.Second,
+				Timeout: defaultClientTimeout,
 			},
 		}
 	}
@@ -66,7 +96,7 @@ func NewKagentiClientFromEnv() *KagentiClient {
 	url := os.Getenv("KAGENTI_CONTROLLER_URL")
 	if url == "" {
 		// Try auto-detection with a short timeout client
-		c := &KagentiClient{httpClient: &http.Client{Timeout: 3 * time.Second}}
+		c := &KagentiClient{httpClient: &http.Client{Timeout: defaultDetectTimeout}}
 		url = c.Detect()
 	}
 	if url == "" {
@@ -75,11 +105,40 @@ func NewKagentiClientFromEnv() *KagentiClient {
 	return NewKagentiClient(url)
 }
 
+// BaseURL returns the configured controller base URL.
+func (c *KagentiClient) BaseURL() string {
+	return c.baseURL
+}
+
+// DirectAgentURL returns the configured direct agent URL.
+func (c *KagentiClient) DirectAgentURL() string {
+	return c.directAgentURL
+}
+
+// DirectAgentName returns the configured direct agent name (if any).
+func (c *KagentiClient) DirectAgentName() string {
+	return c.directAgentName
+}
+
+// DirectAgentNamespace returns the configured direct agent namespace (if any).
+func (c *KagentiClient) DirectAgentNamespace() string {
+	return c.directAgentNamespace
+}
+
 // Status checks whether the kagenti controller is reachable.
 func (c *KagentiClient) Status() (bool, error) {
+	return c.StatusWithContext(context.Background())
+}
+
+// StatusWithContext checks whether the kagenti controller/agent is reachable.
+func (c *KagentiClient) StatusWithContext(ctx context.Context) (bool, error) {
 	if c.directAgentURL != "" {
-		for _, p := range []string{"/.well-known/agent-card.json", "/.well-known/agent.json", "/health", "/healthz"} {
-			resp, err := c.httpClient.Get(c.directAgentURL + p)
+		for _, p := range append(append([]string{}, kagentiDirectCardPaths...), kagentiHealthPaths...) {
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.directAgentURL+p, nil)
+			if err != nil {
+				continue
+			}
+			resp, err := c.httpClient.Do(req)
 			if err != nil {
 				continue
 			}
@@ -91,25 +150,44 @@ func (c *KagentiClient) Status() (bool, error) {
 		return false, fmt.Errorf("kagenti direct agent health check failed at %s", c.directAgentURL)
 	}
 
-	resp, err := c.httpClient.Get(c.baseURL + "/health")
-	if err != nil {
-		return false, fmt.Errorf("kagenti health check failed: %w", err)
+	for _, healthPath := range kagentiHealthPaths {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+healthPath, nil)
+		if err != nil {
+			continue
+		}
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			continue
+		}
+		resp.Body.Close()
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return true, nil
+		}
 	}
-	defer resp.Body.Close()
-	return resp.StatusCode >= 200 && resp.StatusCode < 300, nil
+
+	return false, fmt.Errorf("kagenti health check failed for all known endpoints at %s", c.baseURL)
 }
 
 // ListAgents queries the kagenti controller for registered agents.
 func (c *KagentiClient) ListAgents() ([]AgentInfo, error) {
+	return c.ListAgentsWithContext(context.Background())
+}
+
+// ListAgentsWithContext queries the kagenti controller for registered agents.
+func (c *KagentiClient) ListAgentsWithContext(ctx context.Context) ([]AgentInfo, error) {
 	if c.directAgentURL != "" {
 		name := c.directAgentName
 		namespace := c.directAgentNamespace
 		if namespace == "" {
-			namespace = "default"
+			namespace = defaultDirectAgentNamespace
 		}
 
-		for _, p := range []string{"/.well-known/agent-card.json", "/.well-known/agent.json"} {
-			resp, err := c.httpClient.Get(c.directAgentURL + p)
+		for _, p := range kagentiDirectCardPaths {
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.directAgentURL+p, nil)
+			if err != nil {
+				continue
+			}
+			resp, err := c.httpClient.Do(req)
 			if err != nil {
 				continue
 			}
@@ -126,7 +204,7 @@ func (c *KagentiClient) ListAgents() ([]AgentInfo, error) {
 		}
 
 		if name == "" {
-			name = "kagenti-agent"
+			name = defaultDirectAgentName
 		}
 
 		return []AgentInfo{{
@@ -137,26 +215,63 @@ func (c *KagentiClient) ListAgents() ([]AgentInfo, error) {
 		}}, nil
 	}
 
-	// Kagenti backend exposes agents under /api/v1/agents
-	resp, err := c.httpClient.Get(c.baseURL + "/api/v1/agents")
+	var lastErr error
+	for _, path := range kagentiListAgentPaths {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			lastErr = fmt.Errorf("list agents at %s returned %d: %s", path, resp.StatusCode, string(body))
+			continue
+		}
+
+		agents, err := decodeAgentList(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			lastErr = fmt.Errorf("failed to decode agent list at %s: %w", path, err)
+			continue
+		}
+
+		return agents, nil
+	}
+
+	if lastErr == nil {
+		lastErr = fmt.Errorf("failed to list kagenti agents: no reachable list endpoint")
+	}
+
+	return nil, lastErr
+}
+
+func decodeAgentList(body io.Reader) ([]AgentInfo, error) {
+	raw, err := io.ReadAll(body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list kagenti agents: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("list agents returned %d: %s", resp.StatusCode, string(body))
+		return nil, err
 	}
 
-	// The Kagenti API returns a list envelope: `{"items": [...]}`
-	var result struct {
+	var wrapped struct {
 		Items []AgentInfo `json:"items"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("failed to decode agent list: %w", err)
+	if err := json.Unmarshal(raw, &wrapped); err == nil && wrapped.Items != nil {
+		return wrapped.Items, nil
 	}
-	return result.Items, nil
+
+	var direct []AgentInfo
+	if err := json.Unmarshal(raw, &direct); err == nil {
+		return direct, nil
+	}
+
+	return nil, fmt.Errorf("unsupported list response shape")
 }
 
 // Discover fetches the A2A agent card for the given agent.
@@ -195,11 +310,7 @@ func (c *KagentiClient) Invoke(ctx context.Context, namespace, agentName, messag
 			return nil, fmt.Errorf("failed to marshal direct invoke payload: %w", err)
 		}
 
-		urls := []string{
-			c.directAgentURL + "/api/chat/stream",
-			c.directAgentURL + "/chat/stream",
-			c.directAgentURL + "/stream",
-		}
+		urls := c.directStreamURLs()
 
 		var lastErr error
 		for _, u := range urls {
@@ -232,7 +343,7 @@ func (c *KagentiClient) Invoke(ctx context.Context, namespace, agentName, messag
 		return nil, lastErr
 	}
 
-	// Kagenti backend uses REST+SSE via FastAPI: POST /api/v1/chat/{namespace}/{name}/stream
+	// Kagenti backend uses REST+SSE; keep both known controller paths.
 	type restPayload struct {
 		Message   string `json:"message"`
 		SessionID string `json:"session_id,omitempty"`
@@ -243,64 +354,95 @@ func (c *KagentiClient) Invoke(ctx context.Context, namespace, agentName, messag
 		return nil, fmt.Errorf("failed to marshal kagenti request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/api/v1/chat/%s/%s/stream",
-		c.baseURL, neturl.PathEscape(namespace), neturl.PathEscape(agentName))
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(payload)))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "text/event-stream")
+	urls := c.controllerStreamURLs(namespace, agentName)
 
-	// Reuse configured client settings (transport/TLS/proxy) and disable timeout
-	// so long-running streams are controlled by ctx cancellation.
-	httpClient := c.httpClient
-	if httpClient == nil {
-		httpClient = &http.Client{}
-	} else {
-		clone := *httpClient
-		clone.Timeout = 0
-		httpClient = &clone
-	}
+	var lastErr error
+	for _, url := range urls {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(payload)))
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "text/event-stream")
 
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("kagenti invoke failed: %w", err)
-	}
+		// Reuse configured client settings (transport/TLS/proxy) and disable timeout
+		// so long-running streams are controlled by ctx cancellation.
+		httpClient := c.httpClient
+		if httpClient == nil {
+			httpClient = &http.Client{}
+		} else {
+			clone := *httpClient
+			clone.Timeout = 0
+			httpClient = &clone
+		}
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("kagenti invoke failed at %s: %w", url, err)
+			continue
+		}
+
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return resp.Body, nil
+		}
+
 		errBody, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		return nil, fmt.Errorf("kagenti invoke returned %d: %s", resp.StatusCode, string(errBody))
+		lastErr = fmt.Errorf("kagenti invoke at %s returned %d: %s", url, resp.StatusCode, string(errBody))
 	}
 
-	return resp.Body, nil
+	if lastErr == nil {
+		lastErr = fmt.Errorf("kagenti invoke failed: no reachable stream endpoint")
+	}
+
+	return nil, lastErr
 }
 
-// buildDetectCandidates constructs the list of candidate URLs for kagenti auto-detection.
+// BuildDetectCandidatesFromEnv constructs the list of candidate URLs for kagenti auto-detection.
 // The namespace, service name, port, and protocol are configurable via environment
 // variables so non-standard deployments can be discovered automatically.
-func buildDetectCandidates() []string {
+func BuildDetectCandidatesFromEnv() []string {
 	namespace := os.Getenv("KAGENTI_NAMESPACE")
 	if namespace == "" {
-		namespace = "kagenti-system"
+		namespace = defaultKagentiNamespace
 	}
 	serviceName := os.Getenv("KAGENTI_SERVICE_NAME")
 	if serviceName == "" {
-		serviceName = "kagenti-backend"
+		serviceName = defaultKagentiServiceName
 	}
 	port := os.Getenv("KAGENTI_SERVICE_PORT")
 	if port == "" {
-		port = "8000"
+		port = defaultKagentiServicePort
 	}
 	protocol := os.Getenv("KAGENTI_SERVICE_PROTOCOL")
 	if protocol == "" {
-		protocol = "http"
+		protocol = defaultKagentiServiceScheme
 	}
-	return []string{
+
+	configured := []string{
 		fmt.Sprintf("%s://%s.%s.svc:%s", protocol, serviceName, namespace, port),
 		fmt.Sprintf("%s://%s.%s.svc.cluster.local:%s", protocol, serviceName, namespace, port),
 	}
+
+	legacy := []string{
+		fmt.Sprintf("%s://%s.%s.svc:%s", defaultKagentiServiceScheme, legacyKagentiServiceName, defaultKagentiNamespace, legacyKagentiServicePort),
+		fmt.Sprintf("%s://%s.%s.svc.cluster.local:%s", defaultKagentiServiceScheme, legacyKagentiServiceName, defaultKagentiNamespace, legacyKagentiServicePort),
+		fmt.Sprintf("%s://%s.%s.svc:%s", defaultKagentiServiceScheme, defaultKagentiServiceName, defaultKagentiNamespace, defaultKagentiServicePort),
+		fmt.Sprintf("%s://%s.%s.svc.cluster.local:%s", defaultKagentiServiceScheme, defaultKagentiServiceName, defaultKagentiNamespace, defaultKagentiServicePort),
+	}
+
+	seen := make(map[string]struct{}, len(configured)+len(legacy))
+	all := make([]string, 0, len(configured)+len(legacy))
+	for _, c := range append(configured, legacy...) {
+		if _, ok := seen[c]; ok {
+			continue
+		}
+		seen[c] = struct{}{}
+		all = append(all, c)
+	}
+
+	return all
 }
 
 // Detect tries common in-cluster kagenti service URLs and returns the first reachable one.
@@ -310,17 +452,42 @@ func (c *KagentiClient) Detect() string {
 
 // DetectWithContext tries common in-cluster kagenti service URLs with context support (#5566).
 func (c *KagentiClient) DetectWithContext(ctx context.Context) string {
-	candidates := buildDetectCandidates()
+	candidates := BuildDetectCandidatesFromEnv()
 	for _, url := range candidates {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url+"/health", nil)
-		if err != nil {
-			continue
-		}
-		resp, err := c.httpClient.Do(req)
-		if err == nil {
+		base := strings.TrimRight(url, "/")
+		for _, path := range kagentiHealthPaths {
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+path, nil)
+			if err != nil {
+				continue
+			}
+			resp, err := c.httpClient.Do(req)
+			if err != nil {
+				continue
+			}
 			resp.Body.Close()
-			return url
+			if resp.StatusCode >= 200 && resp.StatusCode < 400 {
+				return base
+			}
 		}
 	}
 	return ""
+}
+
+func (c *KagentiClient) directStreamURLs() []string {
+	base := strings.TrimRight(c.directAgentURL, "/")
+	urls := make([]string, 0, len(kagentiDirectStreamPaths))
+	for _, path := range kagentiDirectStreamPaths {
+		urls = append(urls, base+path)
+	}
+	return urls
+}
+
+func (c *KagentiClient) controllerStreamURLs(namespace, agentName string) []string {
+	escapedNamespace := neturl.PathEscape(namespace)
+	escapedAgentName := neturl.PathEscape(agentName)
+	urls := make([]string, 0, len(kagentiControllerStreamPathPatterns))
+	for _, pattern := range kagentiControllerStreamPathPatterns {
+		urls = append(urls, fmt.Sprintf("%s"+pattern, c.baseURL, escapedNamespace, escapedAgentName))
+	}
+	return urls
 }
