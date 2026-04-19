@@ -100,6 +100,9 @@ const (
 	sqliteDefaultConnMaxLifetime = 5 * time.Minute
 	// sqliteDefaultConnMaxIdleTime closes long-idle connections
 	sqliteDefaultConnMaxIdleTime = 2 * time.Minute
+	// sqliteMinConnLifetime is the minimum allowed connection lifetime
+	// to prevent excessive connection churn
+	sqliteMinConnLifetime = 30 * time.Second
 	// sqliteBusyTimeoutMs is the millisecond duration that a writer will
 	// wait for the SQLite write lock before returning SQLITE_BUSY. Under
 	// WAL mode only one writer holds the lock at a time; this timeout
@@ -192,6 +195,59 @@ func getEnvInt(key string, defaultVal int) int {
 	return defaultVal
 }
 
+// getEnvDuration reads a duration from the environment, falling back to defaultVal.
+func getEnvDuration(key string, defaultVal time.Duration) time.Duration {
+	if v := os.Getenv(key); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return defaultVal
+}
+
+// configureConnectionPool sets SQLite connection pool parameters from environment variables.
+// Reads KC_SQLITE_MAX_OPEN_CONNS, KC_SQLITE_MAX_IDLE_CONNS, KC_SQLITE_CONN_MAX_LIFETIME,
+// and KC_SQLITE_CONN_MAX_IDLE_TIME, validates bounds, and logs the final configuration.
+func configureConnectionPool(db *sql.DB) {
+	maxOpen := getEnvInt("KC_SQLITE_MAX_OPEN_CONNS", sqliteDefaultMaxOpenConns)
+	maxIdle := getEnvInt("KC_SQLITE_MAX_IDLE_CONNS", sqliteDefaultMaxIdleConns)
+	lifetime := getEnvDuration("KC_SQLITE_CONN_MAX_LIFETIME", sqliteDefaultConnMaxLifetime)
+	idleTime := getEnvDuration("KC_SQLITE_CONN_MAX_IDLE_TIME", sqliteDefaultConnMaxIdleTime)
+
+	// Validate and clamp maxOpen to prevent zero or negative values
+	if maxOpen < 1 {
+		slog.Warn("[SQLite] KC_SQLITE_MAX_OPEN_CONNS must be >= 1, using default",
+			"value", maxOpen, "default", sqliteDefaultMaxOpenConns)
+		maxOpen = sqliteDefaultMaxOpenConns
+	}
+
+	// Validate maxIdle <= maxOpen to prevent idle pool larger than open pool
+	if maxIdle > maxOpen {
+		slog.Warn("[SQLite] KC_SQLITE_MAX_IDLE_CONNS cannot exceed KC_SQLITE_MAX_OPEN_CONNS, clamping",
+			"max_idle", maxIdle, "max_open", maxOpen)
+		maxIdle = maxOpen
+	}
+
+	// Validate lifetime >= 30s to prevent excessive connection churn
+	if lifetime < sqliteMinConnLifetime {
+		slog.Warn("[SQLite] KC_SQLITE_CONN_MAX_LIFETIME must be >= 30s, using default",
+			"value", lifetime, "default", sqliteDefaultConnMaxLifetime)
+		lifetime = sqliteDefaultConnMaxLifetime
+	}
+
+	db.SetMaxOpenConns(maxOpen)
+	db.SetMaxIdleConns(maxIdle)
+	db.SetConnMaxLifetime(lifetime)
+	db.SetConnMaxIdleTime(idleTime)
+
+	slog.Info("[SQLite] connection pool configured",
+		"max_open_conns", maxOpen,
+		"max_idle_conns", maxIdle,
+		"conn_max_lifetime", lifetime,
+		"conn_max_idle_time", idleTime,
+	)
+}
+
 // SQLiteStore implements Store using SQLite
 type SQLiteStore struct {
 	db *sql.DB
@@ -222,10 +278,7 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 	db := sql.OpenDB(&fkConnector{driver: drv, dsn: dsn})
 
 	// Configure connection pool for resource management under high load
-	db.SetMaxOpenConns(getEnvInt("KC_SQLITE_MAX_OPEN_CONNS", sqliteDefaultMaxOpenConns))
-	db.SetMaxIdleConns(getEnvInt("KC_SQLITE_MAX_IDLE_CONNS", sqliteDefaultMaxIdleConns))
-	db.SetConnMaxLifetime(sqliteDefaultConnMaxLifetime)
-	db.SetConnMaxIdleTime(sqliteDefaultConnMaxIdleTime)
+	configureConnectionPool(db)
 
 	store := &SQLiteStore{db: db}
 	if err := store.migrate(); err != nil {

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"encoding/json"
 	"path/filepath"
 	"sync"
@@ -509,6 +510,26 @@ func TestHelpers(t *testing.T) {
 		require.Equal(t, defaultVal, got)
 	})
 
+	t.Run("getEnvDuration returns default for unset var", func(t *testing.T) {
+		const defaultVal = 5 * time.Minute
+		got := getEnvDuration("KC_TEST_NONEXISTENT_DURATION_XYZ", defaultVal)
+		require.Equal(t, defaultVal, got)
+	})
+
+	t.Run("getEnvDuration parses valid duration", func(t *testing.T) {
+		t.Setenv("KC_TEST_DURATION", "10m")
+		const defaultVal = 5 * time.Minute
+		got := getEnvDuration("KC_TEST_DURATION", defaultVal)
+		require.Equal(t, 10*time.Minute, got)
+	})
+
+	t.Run("getEnvDuration falls back to default on invalid duration", func(t *testing.T) {
+		t.Setenv("KC_TEST_DURATION_INVALID", "invalid")
+		const defaultVal = 5 * time.Minute
+		got := getEnvDuration("KC_TEST_DURATION_INVALID", defaultVal)
+		require.Equal(t, defaultVal, got)
+	})
+
 	t.Run("nullString empty returns invalid NullString", func(t *testing.T) {
 		ns := nullString("")
 		require.False(t, ns.Valid)
@@ -523,5 +544,64 @@ func TestHelpers(t *testing.T) {
 	t.Run("boolToInt converts correctly", func(t *testing.T) {
 		require.Equal(t, 1, boolToInt(true))
 		require.Equal(t, 0, boolToInt(false))
+	})
+
+	t.Run("configureConnectionPool applies defaults when env vars unset", func(t *testing.T) {
+		// Clear any existing env vars
+		t.Setenv("KC_SQLITE_MAX_OPEN_CONNS", "")
+		t.Setenv("KC_SQLITE_MAX_IDLE_CONNS", "")
+		t.Setenv("KC_SQLITE_CONN_MAX_LIFETIME", "")
+		t.Setenv("KC_SQLITE_CONN_MAX_IDLE_TIME", "")
+
+		db, err := sql.Open("sqlite", ":memory:")
+		require.NoError(t, err)
+		defer db.Close()
+
+		configureConnectionPool(db)
+
+		// Verify defaults are applied
+		require.Equal(t, sqliteDefaultMaxOpenConns, getEnvInt("KC_SQLITE_MAX_OPEN_CONNS", sqliteDefaultMaxOpenConns))
+	})
+
+	t.Run("configureConnectionPool validates maxOpen >= 1", func(t *testing.T) {
+		t.Setenv("KC_SQLITE_MAX_OPEN_CONNS", "0")
+		t.Setenv("KC_SQLITE_MAX_IDLE_CONNS", "5")
+		t.Setenv("KC_SQLITE_CONN_MAX_LIFETIME", "10m")
+		t.Setenv("KC_SQLITE_CONN_MAX_IDLE_TIME", "2m")
+
+		db, err := sql.Open("sqlite", ":memory:")
+		require.NoError(t, err)
+		defer db.Close()
+
+		// Should not panic and should log warning
+		configureConnectionPool(db)
+	})
+
+	t.Run("configureConnectionPool validates maxIdle <= maxOpen", func(t *testing.T) {
+		t.Setenv("KC_SQLITE_MAX_OPEN_CONNS", "10")
+		t.Setenv("KC_SQLITE_MAX_IDLE_CONNS", "20")
+		t.Setenv("KC_SQLITE_CONN_MAX_LIFETIME", "10m")
+		t.Setenv("KC_SQLITE_CONN_MAX_IDLE_TIME", "2m")
+
+		db, err := sql.Open("sqlite", ":memory:")
+		require.NoError(t, err)
+		defer db.Close()
+
+		// Should not panic and should log warning
+		configureConnectionPool(db)
+	})
+
+	t.Run("configureConnectionPool validates lifetime >= 30s", func(t *testing.T) {
+		t.Setenv("KC_SQLITE_MAX_OPEN_CONNS", "25")
+		t.Setenv("KC_SQLITE_MAX_IDLE_CONNS", "5")
+		t.Setenv("KC_SQLITE_CONN_MAX_LIFETIME", "10s")
+		t.Setenv("KC_SQLITE_CONN_MAX_IDLE_TIME", "2m")
+
+		db, err := sql.Open("sqlite", ":memory:")
+		require.NoError(t, err)
+		defer db.Close()
+
+		// Should not panic and should log warning
+		configureConnectionPool(db)
 	})
 }
