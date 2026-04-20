@@ -2,6 +2,11 @@ import { authFetch } from './api'
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
 
+// Timeout for kagenti provider status and agent list queries
+const KAGENTI_STATUS_TIMEOUT_MS = 5_000
+// Timeout for tool invocation through kagenti provider
+const KAGENTI_TOOL_CALL_TIMEOUT_MS = 30_000
+
 export interface KagentiProviderAgent {
   name: string
   namespace: string
@@ -19,7 +24,7 @@ export interface KagentiProviderStatus {
 export async function fetchKagentiProviderStatus(): Promise<KagentiProviderStatus> {
   try {
     const resp = await authFetch(`${API_BASE}/api/kagenti-provider/status`, {
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(KAGENTI_STATUS_TIMEOUT_MS),
     })
     if (!resp.ok) return { available: false, reason: `HTTP ${resp.status}` }
     return resp.json()
@@ -31,7 +36,7 @@ export async function fetchKagentiProviderStatus(): Promise<KagentiProviderStatu
 export async function fetchKagentiProviderAgents(): Promise<KagentiProviderAgent[]> {
   try {
     const resp = await authFetch(`${API_BASE}/api/kagenti-provider/agents`, {
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(KAGENTI_STATUS_TIMEOUT_MS),
     })
     if (!resp.ok) return []
     const data = await resp.json()
@@ -125,7 +130,7 @@ export async function kagentiProviderCallTool(
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ agent, namespace, tool, args }),
-    signal: AbortSignal.timeout(30000),
+    signal: AbortSignal.timeout(KAGENTI_TOOL_CALL_TIMEOUT_MS),
   })
   if (!resp.ok) throw new Error(`Tool call failed: HTTP ${resp.status}`)
   return resp.json()
