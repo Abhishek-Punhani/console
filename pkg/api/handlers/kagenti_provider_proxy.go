@@ -12,6 +12,10 @@ import (
 	"github.com/kubestellar/console/pkg/kagenti_provider"
 )
 
+// kagentiSSELineBufferBytes is the per-line read buffer for SSE streaming responses.
+// 256 KB handles large JSON payloads in a single SSE event.
+const kagentiSSELineBufferBytes = 256 * 1024
+
 // KagentiProviderProxyHandler proxies requests to the kagenti A2A endpoint.
 type KagentiProviderProxyHandler struct {
 	client *kagenti_provider.KagentiClient // can be nil if kagenti not detected
@@ -83,7 +87,7 @@ func (h *KagentiProviderProxyHandler) Chat(c *fiber.Ctx) error {
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
 		defer stream.Close()
 
-		reader := bufio.NewReaderSize(stream, 256*1024) // 256KB buffer per line
+		reader := bufio.NewReaderSize(stream, kagentiSSELineBufferBytes)
 		doneSent := false
 
 		for {
