@@ -3,6 +3,8 @@ package handlers
 import (
 	"os"
 	"testing"
+
+	"github.com/kubestellar/console/pkg/rewards"
 )
 
 func TestNewGitHubAppTokenProvider_MissingEnv(t *testing.T) {
@@ -20,10 +22,10 @@ func TestNewGitHubAppTokenProvider_MissingEnv(t *testing.T) {
 func TestNewGitHubAppTokenProvider_PartialEnv(t *testing.T) {
 	// Any missing var should result in nil (fail-safe).
 	cases := []struct {
-		name               string
-		appID              string
-		installationID     string
-		privateKey         string
+		name           string
+		appID          string
+		installationID string
+		privateKey     string
 	}{
 		{"no private key", "123", "456", ""},
 		{"no app id", "", "456", "key"},
@@ -110,8 +112,8 @@ func TestClassifyIssue_GrandfatheringBeforeCutoff(t *testing.T) {
 		// No performed_via_github_app — github.com submission
 	}
 	c := classifyIssue(item)
-	if c.Points != pointsBugIssue {
-		t.Errorf("pre-cutoff bug should get %d pts, got %d", pointsBugIssue, c.Points)
+	if c.Points != rewards.PointsBugIssue {
+		t.Errorf("pre-cutoff bug should get %d pts, got %d", rewards.PointsBugIssue, c.Points)
 	}
 }
 
@@ -126,8 +128,8 @@ func TestClassifyIssue_EnforcedAfterCutoff_AppSubmitted(t *testing.T) {
 		PerformedViaGitHubApp: &searchApp{Slug: DefaultConsoleAppSlug},
 	}
 	c := classifyIssue(item)
-	if c.Points != pointsBugIssue {
-		t.Errorf("App-submitted bug should get %d pts, got %d", pointsBugIssue, c.Points)
+	if c.Points != rewards.PointsBugIssue {
+		t.Errorf("App-submitted bug should get %d pts, got %d", rewards.PointsBugIssue, c.Points)
 	}
 }
 
@@ -144,8 +146,8 @@ func TestClassifyIssue_EnforcedAfterCutoff_NotAppSubmitted(t *testing.T) {
 	if c.Type != "issue_bug" {
 		t.Errorf("type should still be issue_bug, got %s", c.Type)
 	}
-	if c.Points != pointsOtherIssue {
-		t.Errorf("post-cutoff github.com bug should drop to %d pts, got %d", pointsOtherIssue, c.Points)
+	if c.Points != rewards.PointsOtherIssue {
+		t.Errorf("post-cutoff github.com bug should drop to %d pts, got %d", rewards.PointsOtherIssue, c.Points)
 	}
 }
 
@@ -157,8 +159,8 @@ func TestClassifyIssue_EnforcedAfterCutoff_Feature(t *testing.T) {
 		CreatedAt: "2026-05-01T00:00:00Z",
 		Labels:    []searchLabel{{Name: "enhancement"}},
 	}
-	if c := classifyIssue(github); c.Points != pointsOtherIssue {
-		t.Errorf("post-cutoff github.com feature should drop to %d, got %d", pointsOtherIssue, c.Points)
+	if c := classifyIssue(github); c.Points != rewards.PointsOtherIssue {
+		t.Errorf("post-cutoff github.com feature should drop to %d, got %d", rewards.PointsOtherIssue, c.Points)
 	}
 	// App feature after cutoff → 100 pts
 	app := searchItem{
@@ -167,7 +169,7 @@ func TestClassifyIssue_EnforcedAfterCutoff_Feature(t *testing.T) {
 		Labels:                []searchLabel{{Name: "enhancement"}},
 		PerformedViaGitHubApp: &searchApp{Slug: DefaultConsoleAppSlug},
 	}
-	if c := classifyIssue(app); c.Points != pointsFeatureIssue {
-		t.Errorf("post-cutoff App feature should get %d, got %d", pointsFeatureIssue, c.Points)
+	if c := classifyIssue(app); c.Points != rewards.PointsFeatureIssue {
+		t.Errorf("post-cutoff App feature should get %d, got %d", rewards.PointsFeatureIssue, c.Points)
 	}
 }

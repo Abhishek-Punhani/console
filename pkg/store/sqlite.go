@@ -601,6 +601,11 @@ func (s *SQLiteStore) GetUserByGitHubID(githubID string) (*models.User, error) {
 	return s.scanUser(row)
 }
 
+func (s *SQLiteStore) GetUserByGitHubLogin(login string) (*models.User, error) {
+	row := s.db.QueryRow(`SELECT id, github_id, github_login, email, slack_id, avatar_url, role, onboarded, created_at, last_login FROM users WHERE github_login = ? COLLATE NOCASE`, login)
+	return s.scanUser(row)
+}
+
 func (s *SQLiteStore) scanUser(row *sql.Row) (*models.User, error) {
 	var u models.User
 	var idStr string

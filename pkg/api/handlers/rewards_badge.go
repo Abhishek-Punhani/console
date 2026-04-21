@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"html/template"
 	"log/slog"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/kubestellar/console/pkg/rewards"
+	"github.com/kubestellar/console/pkg/store"
 )
 
 // Phase 2 of RFC #8862 — public, unauthenticated contributor-tier badge.
@@ -42,14 +44,17 @@ const (
 	badgeLabelColor          = "#555"                         // shields.io dark-gray label
 	badgeHeightPx            = 20                             // SVG pill height
 	badgeLabelWidthPx        = 82                             // tuned for "kubestellar" (11 chars)
-	badgeValueWidthPx        = 72                             // tuned for "Commander" (9 chars)
+	badgeValueWidthPx        = 82                             // increased for "Commander" + icon
 	badgeTotalWidthPx        = badgeLabelWidthPx + badgeValueWidthPx
 	badgeLabelMidPx          = badgeLabelWidthPx / 2 // text-anchor centre of label
-	badgeValueMidPx          = badgeLabelWidthPx + (badgeValueWidthPx / 2)
+	badgeValueMidPx          = badgeLabelWidthPx + (badgeValueWidthPx / 2) + 6
 	badgeTextBaselinePx      = 14 // y offset for main text
 	badgeTextShadowPx        = 15 // y offset for drop shadow
 	badgeFontSizePx          = 11 // shields.io default
 	badgeCornerRadiusPx      = 3  // shields.io default
+	badgeIconX               = badgeLabelWidthPx + 6
+	badgeIconY               = 3
+	badgeIconSize            = 14
 )
 
 // Named HTTP statuses so the three render paths are self-documenting.
@@ -110,12 +115,13 @@ func (h *RewardsHandler) fetchUserRewardsForBadge(login string) (*GitHubRewardsR
 // BadgeHandler serves the public contributor-tier badge SVG.
 type BadgeHandler struct {
 	fetcher badgeRewardsFetcher
+	store   store.Store
 }
 
-// NewBadgeHandler wraps a fetcher (usually *RewardsHandler) and exposes
-// GetBadge.
-func NewBadgeHandler(fetcher badgeRewardsFetcher) *BadgeHandler {
-	return &BadgeHandler{fetcher: fetcher}
+// NewBadgeHandler wraps a fetcher (usually *RewardsHandler) and a store
+// and exposes GetBadge.
+func NewBadgeHandler(fetcher badgeRewardsFetcher, s store.Store) *BadgeHandler {
+	return &BadgeHandler{fetcher: fetcher, store: s}
 }
 
 // totalPointsFromResponse keeps the coin lookup in one place so the test
@@ -131,25 +137,63 @@ func totalPointsFromResponse(resp *GitHubRewardsResponse) int {
 func (h *BadgeHandler) GetBadge(c *fiber.Ctx) error {
 	login := strings.TrimSpace(c.Params("github_login"))
 	if login == "" {
-		return renderBadgeSVG(c, badgeStatusBadGate, badgeErrorTierName, badgeErrorTierColor, badgeCacheControlError)
+		return renderBadgeSVG(c, badgeStatusBadGate, badgeErrorTierName, badgeErrorTierColor, "", badgeCacheControlError)
+	}
+
+	// Privacy Check (#8862 Phase 5): only score users who have logged into
+	// the console at least once. Prevents drive-by scraping of GitHub logins
+	// that have no affiliation with the project.
+	if h.store != nil {
+		user, err := h.store.GetUserByGitHubLogin(login)
+		if err != nil {
+			slog.Error("[rewards/badge] store lookup failed", "login", login, "error", err)
+			return renderBadgeSVG(c, badgeStatusBadGate, badgeErrorTierName, badgeErrorTierColor, "", badgeCacheControlError)
+		}
+		if user == nil {
+			// Unknown to console -> return the gray "unknown" badge immediately
+			// without hitting GitHub.
+			return renderBadgeSVG(c, badgeStatusOK, badgeUnknownTierName, badgeUnknownTierColor, "", badgeCacheControlSuccess)
+		}
+
+		resp, cacheHit, err := h.fetcher.fetchUserRewardsForBadge(login)
+		if err != nil {
+			slog.Error("[rewards/badge] live rewards fetch failed", "login", login, "error", err)
+			return renderBadgeSVG(c, http.StatusBadGateway, badgeErrorTierName, badgeErrorTierColor, "", badgeCacheControlError)
+		}
+
+		// Fetch local console rewards (daily logins, onboarding, etc.) and add to
+		// the live GitHub total to get the unified rank seen in the UI.
+		storeRewards, err := h.store.GetUserRewards(user.GitHubID)
+		if err != nil {
+			slog.Error("[rewards/badge] store rewards fetch failed", "login", login, "userId", user.GitHubID, "error", err)
+			// Fall back to GitHub-only points rather than failing the badge
+			storeRewards = &store.UserRewards{}
+		}
+
+		totalPoints := totalPointsFromResponse(resp) + storeRewards.Coins + storeRewards.BonusPoints
+		tier := rewards.GetContributorLevel(totalPoints)
+		fill := tierColorHex(tier.Color)
+
+		emitBadgeFetchedEvent(login, tier.Name, cacheHit)
+		return renderBadgeSVG(c, badgeStatusOK, tier.Name, fill, tier.IconPath, badgeCacheControlSuccess)
 	}
 
 	resp, cacheHit, err := h.fetcher.fetchUserRewardsForBadge(login)
 	switch {
 	case errors.Is(err, errBadgeUnknownLogin):
 		emitBadgeFetchedEvent(login, badgeUnknownTierName, cacheHit)
-		return renderBadgeSVG(c, badgeStatusOK, badgeUnknownTierName, badgeUnknownTierColor, badgeCacheControlSuccess)
+		return renderBadgeSVG(c, badgeStatusOK, badgeUnknownTierName, badgeUnknownTierColor, "", badgeCacheControlSuccess)
 	case err != nil:
 		slog.Error("[rewards/badge] upstream fetch failed", "login", login, "error", err)
 		emitBadgeFetchedEvent(login, badgeErrorTierName, cacheHit)
-		return renderBadgeSVG(c, badgeStatusBadGate, badgeErrorTierName, badgeErrorTierColor, badgeCacheControlError)
+		return renderBadgeSVG(c, badgeStatusBadGate, badgeErrorTierName, badgeErrorTierColor, "", badgeCacheControlError)
 	}
 
 	tier := rewards.GetContributorLevel(totalPointsFromResponse(resp))
 	fill := tierColorHex(tier.Color)
 
 	emitBadgeFetchedEvent(login, tier.Name, cacheHit)
-	return renderBadgeSVG(c, badgeStatusOK, tier.Name, fill, badgeCacheControlSuccess)
+	return renderBadgeSVG(c, badgeStatusOK, tier.Name, fill, tier.IconPath, badgeCacheControlSuccess)
 }
 
 // tierColorHex maps a Tailwind color-family name (from Tier.Color) to a
@@ -188,12 +232,18 @@ type badgeTemplateData struct {
 	LabelMid, ValueMid             int
 	TextBaseline, TextShadow       int
 	FontSize, CornerRadius         int
+	IconPath                       string
+	IconX, IconY, IconSize         int
 }
 
-// badgeSVGTemplate is a minimal shields.io-style two-segment pill.
+// badgeSVGTemplate is a minimal shields.io-style two-segment pill with an optional icon.
 // html/template escapes {{.Label}}/{{.Value}} so a crafted tier name could
 // never inject raw SVG (defensive — tier names come from our own constant).
-var badgeSVGTemplate = template.Must(template.New("badge").Parse(`<svg xmlns="http://www.w3.org/2000/svg" width="{{.TotalWidth}}" height="{{.Height}}" role="img" aria-label="{{.Label}}: {{.Value}}">
+var badgeSVGTemplate = template.Must(template.New("badge").Funcs(template.FuncMap{
+	"calcIconScale": func(size int) string {
+		return fmt.Sprintf("%.3f", float64(size)/24.0)
+	},
+}).Parse(`<svg xmlns="http://www.w3.org/2000/svg" width="{{.TotalWidth}}" height="{{.Height}}" role="img" aria-label="{{.Label}}: {{.Value}}">
 <linearGradient id="s" x2="0" y2="100%">
 <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
 <stop offset="1" stop-opacity=".1"/>
@@ -210,11 +260,20 @@ var badgeSVGTemplate = template.Must(template.New("badge").Parse(`<svg xmlns="ht
 <text x="{{.ValueMid}}" y="{{.TextShadow}}" fill="#010101" fill-opacity=".3">{{.Value}}</text>
 <text x="{{.ValueMid}}" y="{{.TextBaseline}}">{{.Value}}</text>
 </g>
+{{if .IconPath}}
+<g transform="translate({{.IconX}},{{.IconY}}) scale({{calcIconScale .IconSize}})">
+<path fill="#fff" d="{{.IconPath}}"/>
+</g>
+{{end}}
 </svg>`))
+
+func init() {
+	// Template is initialized above with its FuncMap.
+}
 
 // renderBadgeSVG writes the SVG response + headers. All three paths (success,
 // unknown, error) go through this single serializer.
-func renderBadgeSVG(c *fiber.Ctx, status int, tierName, tierColor, cacheControl string) error {
+func renderBadgeSVG(c *fiber.Ctx, status int, tierName, tierColor, iconPath, cacheControl string) error {
 	data := badgeTemplateData{
 		Label:        badgeLabelText,
 		Value:        tierName,
@@ -230,6 +289,10 @@ func renderBadgeSVG(c *fiber.Ctx, status int, tierName, tierColor, cacheControl 
 		TextShadow:   badgeTextShadowPx,
 		FontSize:     badgeFontSizePx,
 		CornerRadius: badgeCornerRadiusPx,
+		IconPath:     iconPath,
+		IconX:        badgeIconX,
+		IconY:        badgeIconY,
+		IconSize:     badgeIconSize,
 	}
 
 	var buf bytes.Buffer

@@ -13,20 +13,16 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/kubestellar/console/pkg/api/middleware"
+	"github.com/kubestellar/console/pkg/rewards"
 	"github.com/kubestellar/console/pkg/settings"
 )
 
 // Point values for GitHub contributions
 const (
-	pointsBugIssue     = 300
-	pointsFeatureIssue = 100
-	pointsOtherIssue   = 50
-	pointsPROpened     = 200
-	pointsPRMerged     = 500
-	rewardsCacheTTL    = 10 * time.Minute
-	rewardsAPITimeout  = 30 * time.Second
-	rewardsPerPage     = 100 // GitHub max per page
-	rewardsMaxPages    = 10  // GitHub search max 1000 results
+	rewardsCacheTTL   = 10 * time.Minute
+	rewardsAPITimeout = 30 * time.Second
+	rewardsPerPage    = 100 // GitHub max per page
+	rewardsMaxPages   = 10  // GitHub search max 1000 results
 )
 
 // RewardsConfig holds configuration for the rewards handler.
@@ -213,9 +209,9 @@ func (h *RewardsHandler) fetchUserRewards(login, token string) (*GitHubRewardsRe
 
 // searchItem is the subset of GitHub Search issue/PR item we care about.
 type searchItem struct {
-	Title   string        `json:"title"`
-	HTMLURL string        `json:"html_url"`
-	Number  int           `json:"number"`
+	Title   string `json:"title"`
+	HTMLURL string `json:"html_url"`
+	Number  int    `json:"number"`
 	// CreatedAt is ISO-8601 — parsed by the rewards classifier to decide
 	// whether to enforce GitHub App attribution (issues created before
 	// the enforcement cutoff are grandfathered to keep the pre-App
@@ -311,13 +307,14 @@ func (h *RewardsHandler) searchItems(login, itemType, token string) ([]searchIte
 // cutoff are grandfathered at their label-derived points.
 //
 // Rollout:
-//   Phase 1 (this PR, post-merge): leave env var unset. Behavior is
-//     identical to before — every bug label = 300 pts, every feature
-//     label = 100 pts, regardless of where the issue was created.
-//     Console issues start getting App attribution baked in.
-//   Phase 2 (after soak time): set CONSOLE_APP_ATTRIBUTION_CUTOFF to
-//     the merge timestamp. From that moment forward, new github.com
-//     issues drop to 50 pts; new console issues stay at 300/100.
+//
+//	Phase 1 (this PR, post-merge): leave env var unset. Behavior is
+//	  identical to before — every bug label = 300 pts, every feature
+//	  label = 100 pts, regardless of where the issue was created.
+//	  Console issues start getting App attribution baked in.
+//	Phase 2 (after soak time): set CONSOLE_APP_ATTRIBUTION_CUTOFF to
+//	  the merge timestamp. From that moment forward, new github.com
+//	  issues drop to 50 pts; new console issues stay at 300/100.
 const attributionEnforcementCutoffEnv = "CONSOLE_APP_ATTRIBUTION_CUTOFF"
 
 // isConsoleAppSubmitted returns true when the issue was created by the
@@ -360,7 +357,7 @@ func requiresAppAttribution(createdAt string) bool {
 // Before the cutoff, all labels are awarded at their full rate.
 func classifyIssue(item searchItem) GitHubContribution {
 	typ := "issue_other"
-	points := pointsOtherIssue
+	points := rewards.PointsOtherIssue
 
 	// Attribution gate: after the cutoff, only App-created issues get
 	// the console-tier point values. See requiresAppAttribution.
@@ -372,13 +369,13 @@ func classifyIssue(item searchItem) GitHubContribution {
 		case "bug", "kind/bug", "type/bug":
 			typ = "issue_bug"
 			if !enforce || consoleSubmitted {
-				points = pointsBugIssue
+				points = rewards.PointsBugIssue
 			}
 			// else: keep pointsOtherIssue (50) — github.com submission after cutoff
 		case "enhancement", "feature", "kind/feature", "type/feature":
 			typ = "issue_feature"
 			if !enforce || consoleSubmitted {
-				points = pointsFeatureIssue
+				points = rewards.PointsFeatureIssue
 			}
 		}
 	}
@@ -404,7 +401,7 @@ func classifyPR(item searchItem) []GitHubContribution {
 			URL:       item.HTMLURL,
 			Repo:      repo,
 			Number:    item.Number,
-			Points:    pointsPROpened,
+			Points:    rewards.PointsPROpened,
 			CreatedAt: item.CreatedAt,
 		},
 	}
@@ -416,7 +413,7 @@ func classifyPR(item searchItem) []GitHubContribution {
 			URL:       item.HTMLURL,
 			Repo:      repo,
 			Number:    item.Number,
-			Points:    pointsPRMerged,
+			Points:    rewards.PointsPRMerged,
 			CreatedAt: *item.PullRequest.MergedAt,
 		})
 	}

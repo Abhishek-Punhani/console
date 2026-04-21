@@ -1179,7 +1179,7 @@ func (s *Server) setupRoutes() {
 	// auth required, rate-limited via publicLimiter (60 req/min/IP). Mounted
 	// on s.app, not `api`, because the `api` group is gated by JWTAuth and
 	// this endpoint must be reachable from READMEs via Camo.
-	badgeHandler := handlers.NewBadgeHandler(rewardsHandler)
+	badgeHandler := handlers.NewBadgeHandler(rewardsHandler, s.store)
 	s.app.Get("/api/rewards/badge/:github_login", publicLimiter, badgeHandler.GetBadge)
 
 	// Persistent per-user reward balances (issue #6011). Every authenticated

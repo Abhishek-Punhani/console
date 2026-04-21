@@ -59,6 +59,7 @@ type Store interface {
 	// Users
 	GetUser(id uuid.UUID) (*models.User, error)
 	GetUserByGitHubID(githubID string) (*models.User, error)
+	GetUserByGitHubLogin(login string) (*models.User, error)
 	CreateUser(user *models.User) error
 	UpdateUser(user *models.User) error
 	UpdateLastLogin(userID uuid.UUID) error

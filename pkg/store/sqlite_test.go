@@ -98,6 +98,20 @@ func TestUserCRUD(t *testing.T) {
 		require.Equal(t, "carol", got.GitHubLogin)
 	})
 
+	t.Run("GetUserByGitHubLogin returns created user (case-insensitive)", func(t *testing.T) {
+		_ = createTestUser(t, store, "gh-800", "Charlie")
+
+		got, err := store.GetUserByGitHubLogin("charlie")
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		require.Equal(t, "Charlie", got.GitHubLogin)
+
+		got2, err := store.GetUserByGitHubLogin("CHARLIE")
+		require.NoError(t, err)
+		require.NotNil(t, got2)
+		require.Equal(t, "Charlie", got2.GitHubLogin)
+	})
+
 	t.Run("GetUserByGitHubID returns nil for unknown ID", func(t *testing.T) {
 		got, err := store.GetUserByGitHubID("nonexistent")
 		require.NoError(t, err)

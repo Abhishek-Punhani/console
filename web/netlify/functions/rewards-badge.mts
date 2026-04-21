@@ -4,18 +4,12 @@
  * Netlify edge handles rate limiting; no app-level limiter needed.
  */
 import { getContributorLevel } from "../../src/types/rewards";
+import { GITHUB_SCORING_GENERATED } from "../../src/types/rewards.generated";
 
 const GITHUB_API = "https://api.github.com";
 const MAX_PAGES = 10; // GitHub Search API caps at 1000 results
 const PER_PAGE = 100; // GitHub maximum
 const API_TIMEOUT_MS = 30_000;
-
-// Scoring — MUST match pkg/rewards + github-rewards.mts
-const POINTS_BUG_ISSUE = 300;
-const POINTS_FEATURE_ISSUE = 100;
-const POINTS_OTHER_ISSUE = 50;
-const POINTS_PR_OPENED = 200;
-const POINTS_PR_MERGED = 500;
 
 const SEARCH_REPOS =
   "repo:kubestellar/console repo:kubestellar/console-marketplace repo:kubestellar/console-kb repo:kubestellar/docs";
@@ -23,14 +17,18 @@ const SEARCH_REPOS =
 // SVG dimensions — tuned to match rewards_badge.go exactly
 const H_PX = 20;
 const LW_PX = 82; // label width ("kubestellar")
-const VW_PX = 72; // value width (tier name)
+const VW_PX = 82; // value width (tier name + icon)
 const TW_PX = LW_PX + VW_PX;
 const LMID_PX = LW_PX / 2;
-const VMID_PX = LW_PX + VW_PX / 2;
+const VMID_PX = LW_PX + VW_PX / 2 + 6;
 const TEXT_BASELINE_PX = 14;
 const TEXT_SHADOW_PX = 15;
 const FONT_PX = 11;
 const CORNER_PX = 3;
+
+const ICON_X = LW_PX + 6;
+const ICON_Y = 3;
+const ICON_SIZE = 14;
 
 const LABEL_TEXT = "kubestellar";
 const LABEL_COLOR = "#555";
@@ -71,9 +69,11 @@ function esc(text: string): string {
     .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
-function renderSVG(tierName: string, tierColor: string): string {
+function renderSVG(tierName: string, tierColor: string, iconPath: string = ""): string {
   const label = esc(LABEL_TEXT);
   const value = esc(tierName);
+  const iconScale = (ICON_SIZE / 24).toFixed(3);
+
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${TW_PX}" height="${H_PX}" role="img" aria-label="${label}: ${value}">
 <linearGradient id="s" x2="0" y2="100%">
 <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
@@ -91,6 +91,10 @@ function renderSVG(tierName: string, tierColor: string): string {
 <text x="${VMID_PX}" y="${TEXT_SHADOW_PX}" fill="#010101" fill-opacity=".3">${value}</text>
 <text x="${VMID_PX}" y="${TEXT_BASELINE_PX}">${value}</text>
 </g>
+${iconPath ? `
+<g transform="translate(${ICON_X},${ICON_Y}) scale(${iconScale})">
+<path fill="#fff" d="${iconPath}"/>
+</g>` : ""}
 </svg>`;
 }
 
@@ -129,18 +133,21 @@ async function searchItems(login: string, itemType: "issue" | "pr", token: strin
 function scorePoints(issues: SearchItem[], prs: SearchItem[]): number {
   let total = 0;
   for (const it of issues) {
-    let pts = POINTS_OTHER_ISSUE;
+    let pts: number = GITHUB_SCORING_GENERATED.OtherIssue;
     for (const lbl of it.labels || []) {
-      if (["bug", "kind/bug", "type/bug"].includes(lbl.name)) { pts = POINTS_BUG_ISSUE; break; }
+      if (["bug", "kind/bug", "type/bug"].includes(lbl.name)) {
+        pts = GITHUB_SCORING_GENERATED.BugIssue;
+        break;
+      }
       if (["enhancement", "feature", "kind/feature", "type/feature"].includes(lbl.name)) {
-        pts = POINTS_FEATURE_ISSUE;
+        pts = GITHUB_SCORING_GENERATED.FeatureIssue;
       }
     }
     total += pts;
   }
   for (const pr of prs) {
-    total += POINTS_PR_OPENED;
-    if (pr.pull_request?.merged_at) total += POINTS_PR_MERGED;
+    total += GITHUB_SCORING_GENERATED.PROpened;
+    if (pr.pull_request?.merged_at) total += GITHUB_SCORING_GENERATED.PRMerged;
   }
   return total;
 }
@@ -155,6 +162,7 @@ export default async (req: Request): Promise<Response> => {
     return svgResponse(STATUS_BAD_GATEWAY, renderSVG(ERROR_NAME, ERROR_COLOR), CACHE_ERROR);
   }
 
+  // @ts-ignore: process is available in Netlify Node.js environment
   const token = process.env.GITHUB_TOKEN || "";
   try {
     const [issues, prs] = await Promise.all([
@@ -163,7 +171,7 @@ export default async (req: Request): Promise<Response> => {
     ]);
     const points = scorePoints(issues, prs);
     const { current } = getContributorLevel(points);
-    return svgResponse(STATUS_OK, renderSVG(current.name, tierColorHex(current.color)), CACHE_SUCCESS);
+    return svgResponse(STATUS_OK, renderSVG(current.name, tierColorHex(current.color), current.iconPath), CACHE_SUCCESS);
   } catch (err) {
     const isUnknown =
       err instanceof Error && (err as Error & { unknownLogin?: boolean }).unknownLogin === true;

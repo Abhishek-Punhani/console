@@ -199,12 +199,14 @@ export interface GitHubRewardsResponse {
   from_cache: boolean
 }
 
+import { CONTRIBUTOR_LEVELS_GENERATED, GITHUB_SCORING_GENERATED } from './rewards.generated'
+
 export const GITHUB_REWARD_POINTS: Record<GitHubRewardType, number> = {
-  issue_bug: 300,
-  issue_feature: 100,
-  issue_other: 50,
-  pr_opened: 200,
-  pr_merged: 500,
+  issue_bug: GITHUB_SCORING_GENERATED.BugIssue,
+  issue_feature: GITHUB_SCORING_GENERATED.FeatureIssue,
+  issue_other: GITHUB_SCORING_GENERATED.OtherIssue,
+  pr_opened: GITHUB_SCORING_GENERATED.PROpened,
+  pr_merged: GITHUB_SCORING_GENERATED.PRMerged,
 }
 
 export const GITHUB_REWARD_LABELS: Record<GitHubRewardType, string> = {
@@ -221,6 +223,7 @@ export interface ContributorLevel {
   rank: number
   name: string
   icon: string         // Lucide icon name
+  iconPath: string     // raw Lucide path data for badges
   minCoins: number
   color: string        // Tailwind color prefix (e.g., 'gray', 'blue')
   bgClass: string      // Background classes for the badge
@@ -235,7 +238,6 @@ export interface ContributorLevel {
 // sync. We keep the public CONTRIBUTOR_LEVELS export name so every
 // existing caller (ContributorLadder, rewards cards, etc.) compiles
 // unchanged.
-import { CONTRIBUTOR_LEVELS_GENERATED } from './rewards.generated'
 
 export const CONTRIBUTOR_LEVELS: ContributorLevel[] = CONTRIBUTOR_LEVELS_GENERATED
 
