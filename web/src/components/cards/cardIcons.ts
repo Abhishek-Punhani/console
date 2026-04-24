@@ -5,7 +5,7 @@ import {
   FileCode, Gauge, AlertCircle, Layers, HardDrive, Globe, Users, Terminal, TrendingUp,
   Gamepad2, Puzzle, Target, Zap, Crown, Ghost, Bird, Rocket, Wand2, Stethoscope,
   MonitorCheck, Monitor, Workflow, Split, Router, BookOpen, Cloudy, Rss, Frame, Wrench, Phone,
-  Clock, Settings, BarChart3, Grid3x3,
+  Clock, Settings, BarChart3, Grid3x3, BrainCircuit
 } from 'lucide-react'
 
 export const CARD_ICONS: Record<string, { icon: ComponentType<{ className?: string }>, color: string }> = {
@@ -242,6 +242,11 @@ export const CARD_ICONS: Record<string, { icon: ComponentType<{ className?: stri
   k3s_status: { icon: Box, color: 'text-green-400' },
   kubevirt_status: { icon: Monitor, color: 'text-orange-400' },
   vcluster_status: { icon: Layers, color: 'text-purple-400' },
+  karmada_status: { icon: Package, color: 'text-indigo-400' },
+  kserve_status: { icon: BrainCircuit, color: 'text-purple-400' },
+  fluid_status: { icon: Database, color: 'text-blue-400' },
+  harbor_status: { icon: Package, color: 'text-blue-400' },
+  kuberay_fleet: { icon: BrainCircuit, color: 'text-purple-400' },
   multi_tenancy_overview: { icon: Shield, color: 'text-cyan-400' },
   tenant_isolation_setup: { icon: Settings, color: 'text-yellow-400' },
   tenant_topology: { icon: GitBranch, color: 'text-emerald-400' },

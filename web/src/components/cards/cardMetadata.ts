@@ -306,14 +306,14 @@ export const CARD_TITLES: Record<string, string> = {
   knative_status: 'Knative',
   // Karmada multi-cluster orchestration
   karmada_status: 'Karmada',
+  cubefs_status: 'CubeFS',
+  harbor_status: 'Harbor Registry',
   kuberay_fleet: 'KubeRay Fleet',
   slo_compliance: 'SLO Compliance',
   failover_timeline: 'Failover Timeline',
   trino_gateway: 'Trino Gateway',
   // Fluid dataset caching
   fluid_status: 'Fluid',
-  // CubeFS distributed file system
-  cubefs_status: 'CubeFS',
 
   // Inspektor Gadget
   network_trace: 'Network Traces',
@@ -599,14 +599,14 @@ export const CARD_DESCRIPTIONS: Record<string, string> = {
   knative_status: 'Knative is a CNCF graduated platform for serverless workloads on Kubernetes. This card monitors Knative Serving services, revision status, traffic routing, and Eventing broker health across your clusters.',
   // Karmada multi-cluster orchestration
   karmada_status: 'Karmada is a multi-cluster orchestration tool that propagates resources (Deployments, Services, etc.) across multiple clusters using placement policies. This card shows propagation status, member cluster health, and policy compliance.',
-  kuberay_fleet: 'Discovers RayCluster, RayService, and RayJob CRDs across all connected clusters. Shows fleet-level Ray workload status including GPU allocations, serving endpoints, and job progress.',
+  cubefs_status: 'CubeFS distributed file system health, volume status, and node topology',
+  harbor_status: 'Harbor registry projects, repositories, and vulnerability scan results',
+  kuberay_fleet: 'KubeRay fleet monitoring — RayCluster, RayService, and RayJob status across all clusters',
   slo_compliance: 'Tracks SLO compliance with configurable targets for latency, error rate, and availability. Shows error budget burn rate and per-cluster compliance indicators.',
   failover_timeline: 'Forensic timeline of cross-region failover events detected from Karmada ResourceBinding status transitions. Shows cluster outages, binding rescheduling, and recovery events.',
   trino_gateway: 'Discovers Trino coordinator, worker, and Trino Gateway pods across clusters. Shows per-cluster query health, gateway routing status, and worker distribution.',
   // Fluid dataset caching
   fluid_status: 'Fluid is a CNCF incubating cloud-native dataset orchestrator that accelerates data access for AI/Big Data workloads. This card monitors dataset caching status, runtime engine health, and data load progress across your clusters.',
-  // CubeFS distributed file system
-  cubefs_status: 'CubeFS is a CNCF graduated cloud-native distributed file system. This card monitors cluster health, volume status, and node topology across your CubeFS deployments.',
 
   // Inspektor Gadget
   network_trace: 'Live network connection tracing via Inspektor Gadget eBPF.',

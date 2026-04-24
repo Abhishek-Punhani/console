@@ -106,6 +106,16 @@ const DESCRIPTORS: CardDescriptor[] = [
     visualization: 'status',
     component: () => import('./cubefs_status').then(m => ({ default: m.CubefsStatus as ComponentType<CardComponentProps> })),
   },
+  // ── Harbor registry card ──────────────────────────────────────────
+  {
+    id: 'harbor_status',
+    title: 'Harbor Registry',
+    description: 'Harbor container registry health, project status, and vulnerability scanning.',
+    category: 'Storage',
+    defaultWidth: 6,
+    visualization: 'status',
+    component: () => import('./harbor_status').then(m => ({ default: m.HarborStatus as ComponentType<CardComponentProps> })),
+  },
 ]
 
 /**

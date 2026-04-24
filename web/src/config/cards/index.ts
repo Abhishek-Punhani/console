@@ -138,6 +138,7 @@ import { providerHealthConfig } from './provider-health'
 import { prowCiMonitorConfig } from './prow-ci-monitor'
 import { prowHistoryConfig } from './prow-history'
 import { prowJobsConfig } from './prow-jobs'
+import harborStatusConfig from './harbor-status'
 import { prowStatusConfig } from './prow-status'
 import { pvStatusConfig } from './pv-status'
 import { pvcStatusConfig } from './pvc-status'
@@ -329,6 +330,8 @@ export const CARD_CONFIGS: CardConfigRegistry = {
   resource_quota_status: resourceQuotaStatusConfig,
   resource_trend: resourceTrendConfig,
   resource_usage: resourceUsageConfig,
+  // Harbor registry
+  harbor_status: harborStatusConfig,
   role_binding_status: roleBindingStatusConfig,
   role_status: roleStatusConfig,
   rss_feed: rssFeedConfig,

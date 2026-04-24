@@ -137,6 +137,9 @@ export const CARD_CATALOG = {
     { type: 'fluid_status', title: 'Fluid', description: 'Fluid dataset caching status, runtime health, and data load progress', visualization: 'status' },
     { type: 'cubefs_status', title: 'CubeFS', description: 'CubeFS distributed file system health, volume status, and node topology', visualization: 'status' },
   ],
+  'Provisioning': [
+    { type: 'harbor_status', title: 'Harbor Registry', description: 'Harbor registry projects, repositories, and vulnerability scan results', visualization: 'status' },
+  ],
   'Network': [
     { type: 'network_overview', title: 'Network Overview', description: 'Services breakdown by type and namespace', visualization: 'status' },
     { type: 'service_status', title: 'Service Status', description: 'Service list with type and ports', visualization: 'table' },
@@ -456,6 +459,7 @@ export const CATEGORY_LOCALE_KEYS: Record<string, string> = {
   'Streaming & Messaging': 'streamingMessaging',
   'Maturity': 'maturity',
   'Observability': 'observability',
+  'Provisioning': 'provisioning',
 }
 
 // ---------------------------------------------------------------------------
@@ -563,6 +567,12 @@ export function generateCardSuggestions(query: string): CardSuggestion[] {
       { type: 'helm_values_diff', title: 'Helm Values Diff', description: 'Compare values vs defaults', visualization: 'table', config: {} },
       { type: 'helm_history', title: 'Helm History', description: 'Release revision history', visualization: 'events', config: {} },
       { type: 'chart_versions', title: 'Helm Chart Versions', description: 'Available chart upgrades', visualization: 'table', config: {} },
+    ]
+  }
+
+  if (lowerQuery.includes('harbor') || lowerQuery.includes('registry') || lowerQuery.includes('vulnerability')) {
+    return [
+      { type: 'harbor_status', title: 'Harbor Registry', description: 'Harbor registry projects, repositories, and vulnerability scan results', visualization: 'status', config: {} },
     ]
   }
 
