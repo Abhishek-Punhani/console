@@ -96,6 +96,16 @@ const DESCRIPTORS: CardDescriptor[] = [
     isLiveData: true,
     component: () => import('./cilium_status').then(m => ({ default: m.CiliumStatus as ComponentType<CardComponentProps> })),
   },
+  // ── CubeFS distributed file system card ────────────────────────────
+  {
+    id: 'cubefs_status',
+    title: 'CubeFS',
+    description: 'CubeFS distributed file system health, volume status, and node topology.',
+    category: 'Storage',
+    defaultWidth: 6,
+    visualization: 'status',
+    component: () => import('./cubefs_status').then(m => ({ default: m.CubefsStatus as ComponentType<CardComponentProps> })),
+  },
 ]
 
 /**

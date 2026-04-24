@@ -37,6 +37,7 @@ import { clusterResourceTreeConfig } from './cluster-resource-tree'
 import { complianceScoreConfig } from './compliance-score'
 import { computeOverviewConfig } from './compute-overview'
 import { configMapStatusConfig } from './configmap-status'
+import { cubefsStatusConfig } from './cubefs-status'
 import { consoleAiHealthCheckConfig } from './console-ai-health-check'
 import { consoleAiIssuesConfig } from './console-ai-issues'
 import { consoleAiKubeconfigAuditConfig } from './console-ai-kubeconfig-audit'
@@ -217,6 +218,7 @@ export const CARD_CONFIGS: CardConfigRegistry = {
   compliance_score: complianceScoreConfig,
   compute_overview: computeOverviewConfig,
   configmap_status: configMapStatusConfig,
+  cubefs_status: cubefsStatusConfig,
   console_ai_health_check: consoleAiHealthCheckConfig,
   console_ai_issues: consoleAiIssuesConfig,
   console_ai_kubeconfig_audit: consoleAiKubeconfigAuditConfig,
@@ -486,6 +488,7 @@ export {
   complianceScoreConfig,
   computeOverviewConfig,
   configMapStatusConfig,
+  cubefsStatusConfig,
   consoleAiHealthCheckConfig,
   consoleAiIssuesConfig,
   consoleAiKubeconfigAuditConfig,

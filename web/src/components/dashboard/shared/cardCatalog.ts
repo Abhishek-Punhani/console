@@ -135,6 +135,7 @@ export const CARD_CATALOG = {
     { type: 'pvc_status', title: 'PVC Status', description: 'Persistent Volume Claims with status breakdown', visualization: 'table' },
     { type: 'pv_status', title: 'Persistent Volumes', description: 'Persistent Volumes with capacity, access modes, and reclaim policy', visualization: 'table' },
     { type: 'fluid_status', title: 'Fluid', description: 'Fluid dataset caching status, runtime health, and data load progress', visualization: 'status' },
+    { type: 'cubefs_status', title: 'CubeFS', description: 'CubeFS distributed file system health, volume status, and node topology', visualization: 'status' },
   ],
   'Network': [
     { type: 'network_overview', title: 'Network Overview', description: 'Services breakdown by type and namespace', visualization: 'status' },
@@ -611,6 +612,12 @@ export function generateCardSuggestions(query: string): CardSuggestion[] {
   if (lowerQuery.includes('fluid') || lowerQuery.includes('dataset') || lowerQuery.includes('caching') || lowerQuery.includes('alluxio') || lowerQuery.includes('juicefs')) {
     return [
       { type: 'fluid_status', title: 'Fluid', description: 'Fluid dataset caching status, runtime health, and data load progress', visualization: 'status', config: {} },
+    ]
+  }
+
+  if (lowerQuery.includes('cubefs') || lowerQuery.includes('cube fs') || lowerQuery.includes('distributed file system') || lowerQuery.includes('volume status')) {
+    return [
+      { type: 'cubefs_status', title: 'CubeFS', description: 'CubeFS distributed file system health, volume status, and node topology', visualization: 'status', config: {} },
     ]
   }
 

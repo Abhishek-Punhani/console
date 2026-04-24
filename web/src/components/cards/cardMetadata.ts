@@ -312,6 +312,8 @@ export const CARD_TITLES: Record<string, string> = {
   trino_gateway: 'Trino Gateway',
   // Fluid dataset caching
   fluid_status: 'Fluid',
+  // CubeFS distributed file system
+  cubefs_status: 'CubeFS',
 
   // Inspektor Gadget
   network_trace: 'Network Traces',
@@ -603,6 +605,8 @@ export const CARD_DESCRIPTIONS: Record<string, string> = {
   trino_gateway: 'Discovers Trino coordinator, worker, and Trino Gateway pods across clusters. Shows per-cluster query health, gateway routing status, and worker distribution.',
   // Fluid dataset caching
   fluid_status: 'Fluid is a CNCF incubating cloud-native dataset orchestrator that accelerates data access for AI/Big Data workloads. This card monitors dataset caching status, runtime engine health, and data load progress across your clusters.',
+  // CubeFS distributed file system
+  cubefs_status: 'CubeFS is a CNCF graduated cloud-native distributed file system. This card monitors cluster health, volume status, and node topology across your CubeFS deployments.',
 
   // Inspektor Gadget
   network_trace: 'Live network connection tracing via Inspektor Gadget eBPF.',

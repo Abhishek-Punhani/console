@@ -103,6 +103,8 @@ export const CARD_ICONS: Record<string, { icon: ComponentType<{ className?: stri
   pvc_status: { icon: HardDrive, color: 'text-blue-400' },
   pv_status: { icon: HardDrive, color: 'text-purple-400' },
   storage_overview: { icon: Database, color: 'text-purple-400' },
+  // CubeFS
+  cubefs_status: { icon: Database, color: 'text-green-400' },
   resource_quota_status: { icon: Gauge, color: 'text-orange-400' },
 
   // Network
