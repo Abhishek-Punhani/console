@@ -111,7 +111,13 @@ func TestServer_HandleArgoCDSync(t *testing.T) {
 	}
 
 	// Verify annotation was updated
-	updatedApp, _ := fakeDyn.Resource(v1alpha1.ArgoApplicationGVR).Namespace(namespace).Get(context.Background(), appName, metav1.GetOptions{})
+	updatedApp, err := fakeDyn.Resource(v1alpha1.ArgoApplicationGVR).Namespace(namespace).Get(context.Background(), appName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Failed to get updated app: %v", err)
+	}
+	if updatedApp == nil {
+		t.Fatalf("Updated app is nil")
+	}
 	if updatedApp.GetAnnotations()["argocd.argoproj.io/refresh"] != "hard" {
 		t.Errorf("Annotation not updated")
 	}

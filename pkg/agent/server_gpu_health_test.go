@@ -47,7 +47,10 @@ func TestServer_HandleGPUHealthCronJob(t *testing.T) {
 	// Verify CronJob was created
 	cj, err := fakeCS.BatchV1().CronJobs("gpu-ns").Get(context.Background(), "gpu-health-check", metav1.GetOptions{})
 	if err != nil {
-		t.Errorf("CronJob not created: %v", err)
+		t.Fatalf("CronJob not created: %v", err)
+	}
+	if cj == nil {
+		t.Fatalf("CronJob is nil")
 	}
 	if cj.Spec.Schedule != "*/10 * * * *" {
 		t.Errorf("Expected schedule */10 * * * *, got %s", cj.Spec.Schedule)

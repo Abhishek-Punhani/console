@@ -108,7 +108,7 @@ func TestServer_HandleCiliumStatus(t *testing.T) {
 		t.Errorf("Expected status Healthy, got %s", resp.Status)
 	}
 	if len(resp.Nodes) != 1 {
-		t.Errorf("Expected 1 node, got %d", len(resp.Nodes))
+		t.Fatalf("Expected 1 node, got %d", len(resp.Nodes))
 	}
 	if resp.Nodes[0].Version != "1.14.4" {
 		t.Errorf("Expected version 1.14.4, got %s", resp.Nodes[0].Version)
