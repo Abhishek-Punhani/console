@@ -339,16 +339,25 @@ jobs:
 
           echo "Testing WebSocket upgrade with correct token..."
           # A successful WS upgrade (101) keeps the connection open, so curl
-          # will hit --max-time and exit with code 28 (timeout). Capture the
-          # exit code separately so `set -e` doesn't kill the step.
-          WS_CODE_AUTH=$(curl -sS --max-time 5 -o /dev/null -w '%{http_code}' \
+          # will hit --max-time and exit with code 28 (timeout). Temporarily
+          # disable errexit so the non-zero curl exit doesn't kill the step.
+          # The `|| true` pattern inside command substitution is unreliable
+          # under bash -e in some CI environments.
+          set +e
+          WS_CODE_AUTH=$(curl -sS --max-time 5 --connect-timeout 3 \
+            -o /dev/null -w '%{http_code}' \
             -H "Connection: Upgrade" \
             -H "Upgrade: websocket" \
             -H "Sec-WebSocket-Version: 13" \
             -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
-            "http://127.0.0.1:8585/ws?token=${KC_AGENT_TOKEN}" 2>/dev/null) || true
+            "http://127.0.0.1:8585/ws?token=${KC_AGENT_TOKEN}" 2>/dev/null)
+          WS_CURL_RC=$?
+          set -e
+          echo "curl exit=$WS_CURL_RC http_code=$WS_CODE_AUTH"
 
-          # 101 = upgrade accepted, or any non-401 = token was accepted
+          # 101 = upgrade accepted, or any non-401 = token was accepted.
+          # curl exit 28 (timeout) is expected for a successful WS upgrade
+          # because the connection stays open until --max-time fires.
           if [ "$WS_CODE_AUTH" = "401" ]; then
             echo "::error::kc-agent rejected WebSocket upgrade WITH correct token — WS token auth is broken"
             exit 1
