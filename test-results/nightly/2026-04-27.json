@@ -1,17 +1,18 @@
 {
-  "timestamp": "2026-04-27T00:22:13Z",
+  "timestamp": "2026-04-27T08:02:27Z",
   "fastMode": false,
   "summary": {
     "total": 32,
-    "passed": 29,
-    "failed": 3,
+    "passed": 30,
+    "failed": 2,
     "skipped": 0
   },
   "results": [
     {
       "suite": "consistency-test",
-      "status": "pass",
-      "duration": 4
+      "status": "fail",
+      "duration": 3,
+      "failure_reason": "  Phase 6 (Cache Patterns)       ⚠️  5 warnings\n  Total: 1 errors, 64 warnings\nReports:\n  JSON:     web/e2e/test-results/consistency-report.json\n  Summary:  web/e2e/test-results/consistency-summary.md\n"
     },
     {
       "suite": "helm-lint-test",
@@ -36,18 +37,18 @@
     {
       "suite": "unit-test",
       "status": "fail",
-      "duration": 1569,
-      "failure_reason": " Test Files  2 failed | 960 passed (966)\n      Tests  11 failed | 17891 passed | 6 skipped (17970)\n     Errors  6 errors\n   Start at  22:53:24\n   Duration  1567.00s (transform 54.27s, setup 133.82s, import 149.54s, tests 256.39s, environment 788.88s)\n"
+      "duration": 1583,
+      "failure_reason": " Test Files  16 failed | 965 passed (985)\n      Tests  210 failed | 17939 passed | 6 skipped (18217)\n     Errors  9 errors\n   Start at  06:48:35\n   Duration  1580.58s (transform 51.07s, setup 137.95s, import 149.53s, tests 246.00s, environment 811.25s)\n"
     },
     {
       "suite": "auth-lifecycle-test",
       "status": "pass",
-      "duration": 37
+      "duration": 35
     },
     {
       "suite": "settings-migration-test",
       "status": "pass",
-      "duration": 3
+      "duration": 2
     },
     {
       "suite": "update-lifecycle-test",
@@ -57,17 +58,17 @@
     {
       "suite": "websocket-resilience-test",
       "status": "pass",
-      "duration": 1
+      "duration": 0
     },
     {
       "suite": "gosec-test",
       "status": "pass",
-      "duration": 45
+      "duration": 44
     },
     {
       "suite": "dependency-audit-test",
       "status": "pass",
-      "duration": 11
+      "duration": 12
     },
     {
       "suite": "secret-scan-test",
@@ -97,7 +98,7 @@
     {
       "suite": "api-fuzz-test",
       "status": "pass",
-      "duration": 146
+      "duration": 145
     },
     {
       "suite": "error-boundary-test",
@@ -107,33 +108,32 @@
     {
       "suite": "console-error-scan",
       "status": "pass",
-      "duration": 122
+      "duration": 119
     },
     {
       "suite": "nav-test",
       "status": "pass",
-      "duration": 602
+      "duration": 607
     },
     {
       "suite": "perf-test",
-      "status": "fail",
-      "duration": 1084,
-      "failure_reason": "  Slow test file: [chromium] › e2e/perf/dashboard-perf.spec.ts (5.5m)\n  Consider running tests from slow files in parallel. See: https://playwright.dev/docs/test-parallel\n  1 failed\n    [chromium] › e2e/perf/dashboard-perf.spec.ts:343:5 › Cluster Admin (live+cache) — card loading performance \n  92 passed (18.1m)\n"
+      "status": "pass",
+      "duration": 1070
     },
     {
       "suite": "ui-compliance-test",
       "status": "pass",
-      "duration": 116
+      "duration": 112
     },
     {
       "suite": "deploy-test",
       "status": "pass",
-      "duration": 86
+      "duration": 80
     },
     {
       "suite": "cache-test",
       "status": "pass",
-      "duration": 118
+      "duration": 126
     },
     {
       "suite": "benchmark-test",
@@ -142,29 +142,28 @@
     },
     {
       "suite": "ai-ml-test",
-      "status": "fail",
-      "duration": 900,
-      "failure_reason": "  Prometheus API calls: 0\n  ✘  10 [chromium] › e2e/ai-ml/ai-ml-dashboard.spec.ts:471:3 › AI/ML Dashboard — live Prometheus data › cards show live Prometheus metrics from vLLM (5.1m)\n  Prometheus API calls: 0\n  ✘  11 [chromium] › e2e/ai-ml/ai-ml-dashboard.spec.ts:471:3 › AI/ML Dashboard — live Prometheus data › cards show live Prometheus metrics from vLLM (retry #1) (5.1m)\nSuite killed after 900s wall-clock timeout\n"
+      "status": "pass",
+      "duration": 3
     },
     {
       "suite": "a11y-test",
       "status": "pass",
-      "duration": 86
+      "duration": 84
     },
     {
       "suite": "error-resilience-test",
       "status": "pass",
-      "duration": 33
+      "duration": 35
     },
     {
       "suite": "i18n-test",
       "status": "pass",
-      "duration": 59
+      "duration": 63
     },
     {
       "suite": "interaction-test",
       "status": "pass",
-      "duration": 36
+      "duration": 37
     },
     {
       "suite": "security-e2e-test",
