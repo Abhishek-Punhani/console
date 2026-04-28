@@ -1189,6 +1189,7 @@ export function MissionSidebar() {
               </button>
             )}
             <MissionChat
+              key={activeMission?.id}
               mission={activeMission}
               isFullScreen={isFullScreen}
               onToggleFullScreen={() => setFullScreen(true)}
