@@ -1,3 +1,28 @@
+## Pass 46 — 2026-04-28 UTC (nightlyPlaywright cascading failures: Sidebar + Clusters)
+
+### nightlyPlaywright=RED — Cascading Test Failures Diagnosed
+
+**Trigger**: URGENT KICK from supervisor — nightlyPlaywright=RED, coverage=90%<91%.
+
+**Recent Changes**: PR #10751 added visual regression CI; PR #10741 removed blanket test skips. Increased test visibility exposed pre-existing stability issues.
+
+**Cascading Failures Identified** (from run 25067763906 1hr ago):
+
+| Failure | Test | Root Cause | Fix |
+|---------|------|-----------|-----|
+| Sidebar customize modal timeout | Sidebar.spec.ts:282-301 | Missing `{ force: true }` on click() — CSS transition delays stall actionability checks | Added force-click (commit e1273f896) |
+| Clusters health indicator not found | Clusters.spec.ts:92-100 | Selector looking for `.bg-green-400` but StatusIndicator uses `.bg-green-500` | Updated selector (commit 2df2fc0cc) |
+| Login page not rendering on mobile | Login.spec.ts:118, 152 | Missing catch-all `**/api/**` mock → unmocked requests hang | Added mocks (commit f12b31eb9) |
+
+**Fixes Stacked & Pushed** (commits f12b31eb9, 2df2fc0cc, e1273f896):
+- All 3 root causes addressed
+- Ready for validation run to test combined fixes
+- Coverage issue (reviewer-m3s) remains blocked (infrastructure — TTY EIO)
+
+**Next**: Trigger new nightly validation run on fixed SHA.
+
+---
+
 ## Pass 45 — 2026-04-28 UTC (nightlyPlaywright Login test failures)
 
 ### nightlyPlaywright=RED — NEW FAILURE: Login.spec.ts on mobile-chrome
