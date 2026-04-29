@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef, memo } from 'react'
 import { Server, Activity, Box, Cpu, ChevronRight } from 'lucide-react'
 import { useClusters } from '../../hooks/useMCP'
 import { useCachedGPUNodes } from '../../hooks/useCachedData'
@@ -268,10 +268,10 @@ function ClusterComparisonInternal({ config }: ClusterComparisonProps) {
   )
 }
 
-export function ClusterComparison(props: ClusterComparisonProps) {
+export const ClusterComparison = memo(function ClusterComparison(props: ClusterComparisonProps) {
   return (
     <DynamicCardErrorBoundary cardId="ClusterComparison">
       <ClusterComparisonInternal {...props} />
     </DynamicCardErrorBoundary>
   )
-}
+})
