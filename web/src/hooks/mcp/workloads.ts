@@ -25,6 +25,129 @@ export interface PodClusterError {
 }
 
 // ---------------------------------------------------------------------------
+// Return types for exported hooks
+// ---------------------------------------------------------------------------
+
+export interface UsePodsResult {
+  pods: PodInfo[]
+  isLoading: boolean
+  isRefreshing: boolean
+  lastUpdated: Date | null
+  error: string | null
+  refetch: () => Promise<void>
+  consecutiveFailures: number
+  isFailed: boolean
+  lastRefresh: Date | null
+}
+
+export interface UseAllPodsResult {
+  pods: PodInfo[]
+  isLoading: boolean
+  isRefreshing: boolean
+  lastUpdated: Date | null
+  error: string | null
+  clusterErrors: PodClusterError[]
+  refetch: () => Promise<void>
+}
+
+export interface UsePodIssuesResult {
+  issues: PodIssue[]
+  isLoading: boolean
+  isRefreshing: boolean
+  lastUpdated: Date | null
+  error: string | null
+  refetch: () => Promise<void>
+  consecutiveFailures: number
+  isFailed: boolean
+  lastRefresh: Date | null
+}
+
+export interface UseDeploymentIssuesResult {
+  issues: DeploymentIssue[]
+  isLoading: boolean
+  isRefreshing: boolean
+  lastUpdated: Date | null
+  error: string | null
+  refetch: () => Promise<void>
+  consecutiveFailures: number
+  isFailed: boolean
+  lastRefresh: Date | null
+}
+
+export interface UseDeploymentsResult {
+  deployments: Deployment[]
+  isLoading: boolean
+  isRefreshing: boolean
+  lastUpdated: Date | null
+  error: string | null
+  refetch: () => Promise<void>
+  consecutiveFailures: number
+  isFailed: boolean
+  lastRefresh: Date | null
+}
+
+export interface UseJobsResult {
+  jobs: Job[]
+  isLoading: boolean
+  error: string | null
+  refetch: () => Promise<void>
+  consecutiveFailures: number
+  isFailed: boolean
+}
+
+export interface UseHPAsResult {
+  hpas: HPA[]
+  isLoading: boolean
+  error: string | null
+  refetch: () => Promise<void>
+  consecutiveFailures: number
+  isFailed: boolean
+}
+
+export interface UseReplicaSetsResult {
+  replicasets: ReplicaSet[]
+  isLoading: boolean
+  error: string | null
+  refetch: () => Promise<void>
+  consecutiveFailures: number
+  isFailed: boolean
+}
+
+export interface UseStatefulSetsResult {
+  statefulsets: StatefulSet[]
+  isLoading: boolean
+  error: string | null
+  refetch: () => Promise<void>
+  consecutiveFailures: number
+  isFailed: boolean
+}
+
+export interface UseDaemonSetsResult {
+  daemonsets: DaemonSet[]
+  isLoading: boolean
+  error: string | null
+  refetch: () => Promise<void>
+  consecutiveFailures: number
+  isFailed: boolean
+}
+
+export interface UseCronJobsResult {
+  cronjobs: CronJob[]
+  isLoading: boolean
+  error: string | null
+  refetch: () => Promise<void>
+  consecutiveFailures: number
+  isFailed: boolean
+}
+
+export interface UsePodLogsResult {
+  logs: string
+  isLoading: boolean
+  error: string | null
+  refetch: () => Promise<void>
+}
+
+// ---------------------------------------------------------------------------
 // Shared Workloads State - enables cache reset notifications to all consumers
 // ---------------------------------------------------------------------------
 
@@ -245,7 +368,7 @@ function savePodsCacheToStorage() {
 // usePods – Hook to get pods with localStorage-backed caching
 // ---------------------------------------------------------------------------
 
-export function usePods(cluster?: string, namespace?: string, sortBy: 'restarts' | 'name' = 'restarts', limit = 10) {
+export function usePods(cluster?: string, namespace?: string, sortBy: 'restarts' | 'name' = 'restarts', limit = 10): UsePodsResult {
   // Include sortBy and limit in cache key to prevent cross-view stale data (#7218)
   const cacheKey = `pods:${cluster || 'all'}:${namespace || 'all'}:${sortBy}:${limit}`
 
@@ -440,7 +563,7 @@ export function usePods(cluster?: string, namespace?: string, sortBy: 'restarts'
 
 // When forceLive is true, skip demo mode fallback and always query the real API.
 // Used by GPU cards when running in-cluster with OAuth.
-export function useAllPods(cluster?: string, namespace?: string, forceLive = false) {
+export function useAllPods(cluster?: string, namespace?: string, forceLive = false): UseAllPodsResult {
   const cacheKey = `pods:${cluster || 'all'}:${namespace || 'all'}`
 
   // Initialize from cache if available
@@ -616,7 +739,7 @@ let podIssuesCache: PodIssuesCache | null = null
 // usePodIssues
 // ---------------------------------------------------------------------------
 
-export function usePodIssues(cluster?: string, namespace?: string) {
+export function usePodIssues(cluster?: string, namespace?: string): UsePodIssuesResult {
   const cacheKey = `podIssues:${cluster || 'all'}:${namespace || 'all'}`
 
   // Initialize from cache if available
@@ -826,7 +949,7 @@ let deploymentIssuesCache: DeploymentIssuesCache | null = null
 // useDeploymentIssues
 // ---------------------------------------------------------------------------
 
-export function useDeploymentIssues(cluster?: string, namespace?: string) {
+export function useDeploymentIssues(cluster?: string, namespace?: string): UseDeploymentIssuesResult {
   const cacheKey = `deploymentIssues:${cluster || 'all'}:${namespace || 'all'}`
 
   // Initialize from cache if available
@@ -986,7 +1109,7 @@ let deploymentsCache: DeploymentsCache | null = null
 // useDeployments – Hook to get deployments with rollout status
 // ---------------------------------------------------------------------------
 
-export function useDeployments(cluster?: string, namespace?: string) {
+export function useDeployments(cluster?: string, namespace?: string): UseDeploymentsResult {
   const cacheKey = `deployments:${cluster || 'all'}:${namespace || 'all'}`
 
   // Initialize from cache if available and matches current key
@@ -1230,7 +1353,7 @@ export function useDeployments(cluster?: string, namespace?: string) {
 // useJobs
 // ---------------------------------------------------------------------------
 
-export function useJobs(cluster?: string, namespace?: string) {
+export function useJobs(cluster?: string, namespace?: string): UseJobsResult {
   const [jobs, setJobs] = useState<Job[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -1313,7 +1436,7 @@ export function useJobs(cluster?: string, namespace?: string) {
 // useHPAs
 // ---------------------------------------------------------------------------
 
-export function useHPAs(cluster?: string, namespace?: string) {
+export function useHPAs(cluster?: string, namespace?: string): UseHPAsResult {
   const [hpas, setHPAs] = useState<HPA[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -1377,7 +1500,7 @@ export function useHPAs(cluster?: string, namespace?: string) {
 // useReplicaSets
 // ---------------------------------------------------------------------------
 
-export function useReplicaSets(cluster?: string, namespace?: string) {
+export function useReplicaSets(cluster?: string, namespace?: string): UseReplicaSetsResult {
   const [replicasets, setReplicaSets] = useState<ReplicaSet[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -1441,7 +1564,7 @@ export function useReplicaSets(cluster?: string, namespace?: string) {
 // useStatefulSets
 // ---------------------------------------------------------------------------
 
-export function useStatefulSets(cluster?: string, namespace?: string) {
+export function useStatefulSets(cluster?: string, namespace?: string): UseStatefulSetsResult {
   const [statefulsets, setStatefulSets] = useState<StatefulSet[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -1504,7 +1627,7 @@ export function useStatefulSets(cluster?: string, namespace?: string) {
 // useDaemonSets
 // ---------------------------------------------------------------------------
 
-export function useDaemonSets(cluster?: string, namespace?: string) {
+export function useDaemonSets(cluster?: string, namespace?: string): UseDaemonSetsResult {
   const [daemonsets, setDaemonSets] = useState<DaemonSet[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -1567,7 +1690,7 @@ export function useDaemonSets(cluster?: string, namespace?: string) {
 // useCronJobs
 // ---------------------------------------------------------------------------
 
-export function useCronJobs(cluster?: string, namespace?: string) {
+export function useCronJobs(cluster?: string, namespace?: string): UseCronJobsResult {
   const [cronjobs, setCronJobs] = useState<CronJob[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -1633,7 +1756,7 @@ export function useCronJobs(cluster?: string, namespace?: string) {
 /** Default tail line count when caller does not specify one (matches backend default). */
 export const USE_POD_LOGS_DEFAULT_TAIL = 100
 
-export function usePodLogs(cluster: string, namespace: string, pod: string, container?: string, tail = USE_POD_LOGS_DEFAULT_TAIL) {
+export function usePodLogs(cluster: string, namespace: string, pod: string, container?: string, tail = USE_POD_LOGS_DEFAULT_TAIL): UsePodLogsResult {
   const [logs, setLogs] = useState<string>('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
