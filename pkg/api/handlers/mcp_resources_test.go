@@ -7,6 +7,10 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
+	"github.com/kubestellar/console/pkg/models"
+	"github.com/kubestellar/console/pkg/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -115,4 +119,71 @@ func TestCreateOrUpdateResourceQuota(t *testing.T) {
 	resp, err := env.App.Test(req, 5000)
 	require.NoError(t, err)
 	assert.Equal(t, 200, resp.StatusCode)
+}
+
+func TestCallDeployTool_RBAC(t *testing.T) {
+	env := setupTestEnv(t)
+
+	makeApp := func(userID uuid.UUID) *fiber.App {
+		app := fiber.New()
+		handler := NewMCPHandlers(nil, env.K8sClient, env.Store)
+		app.Post("/api/mcp/tools/deploy", func(c *fiber.Ctx) error {
+			c.Locals("userID", userID)
+			return handler.CallDeployTool(c)
+		})
+		return app
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{"name": "list_workspaces", "arguments": map[string]interface{}{}})
+
+	t.Run("viewer gets 403", func(t *testing.T) {
+		viewerID := uuid.New()
+		env.Store.(*test.MockStore).On("GetUser", viewerID).Return(&models.User{
+			ID:   viewerID,
+			Role: models.UserRoleViewer,
+		}, nil)
+
+		req, err := http.NewRequest(http.MethodPost, "/api/mcp/tools/deploy", bytes.NewReader(body))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := makeApp(viewerID).Test(req, 5000)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	})
+
+	t.Run("editor is not rejected", func(t *testing.T) {
+		editorID := uuid.New()
+		env.Store.(*test.MockStore).On("GetUser", editorID).Return(&models.User{
+			ID:   editorID,
+			Role: models.UserRoleEditor,
+		}, nil)
+
+		req, err := http.NewRequest(http.MethodPost, "/api/mcp/tools/deploy", bytes.NewReader(body))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := makeApp(editorID).Test(req, 5000)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		assert.NotEqual(t, http.StatusForbidden, resp.StatusCode)
+	})
+
+	t.Run("admin is not rejected", func(t *testing.T) {
+		adminID := uuid.New()
+		env.Store.(*test.MockStore).On("GetUser", adminID).Return(&models.User{
+			ID:   adminID,
+			Role: models.UserRoleAdmin,
+		}, nil)
+
+		req, err := http.NewRequest(http.MethodPost, "/api/mcp/tools/deploy", bytes.NewReader(body))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := makeApp(adminID).Test(req, 5000)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		assert.NotEqual(t, http.StatusForbidden, resp.StatusCode)
+	})
 }

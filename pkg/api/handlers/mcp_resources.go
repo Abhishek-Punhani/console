@@ -1057,6 +1057,12 @@ func (h *MCPHandlers) CallOpsTool(c *fiber.Ctx) error {
 
 // CallDeployTool calls a kubestellar-deploy tool
 func (h *MCPHandlers) CallDeployTool(c *fiber.Ctx) error {
+	// SECURITY (#7495): tool-call endpoint can expose sensitive cluster data;
+	// require at least editor role to invoke tools.
+	if err := requireEditorOrAdmin(c, h.store); err != nil {
+		return err
+	}
+
 	if h.bridge == nil {
 		return c.Status(503).JSON(fiber.Map{"error": "MCP bridge not available"})
 	}
