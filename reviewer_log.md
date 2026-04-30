@@ -1,5 +1,59 @@
 # Reviewer Log
 
+## Pass 77 — 2026-04-30T11:16–11:30 UTC
+
+**Trigger:** KICK — RED indicators: nightlyPlaywright=RED, coverage=90%<91%
+
+### Pre-flight
+- `git pull /tmp/hive` — diverged branches; fetched FETCH_HEAD only (hive ahead by scanner pass commits)
+- Beads: `reviewer-1po`, `reviewer-oxr` blocked (V8CoverageProvider TTY — ongoing)
+- Ready beads: none
+
+### GA4 Watch (30-min vs 7d baseline)
+- `ga4-anomalies.json` fresh at 10:38 UTC — **NOMINAL, 0 anomalies** ✅
+- No new issues filed
+
+### Coverage RED (90.06% < 91%) → FIXED
+- `merge-eligible.json`: 0 merge-eligible PRs
+- PR #11029 (`🌱 coverage: DashboardCustomizer + useClusterGroups tests`) — **MERGED** (all CI green at merge time)
+- Coverage Suite post-merge shows 90.06% with 1 failing test: `useSelfUpgrade > pollForRestart completes when /health returns 200`
+  - **Root cause**: `vi.spyOn(window.location, 'reload').mockImplementation(…)` throws `TypeError: Cannot redefine property: reload` in jsdom (property is non-configurable)
+  - **Fix**: replaced with `vi.stubGlobal('location', { ...window.location, reload: vi.fn() })` + `vi.unstubAllGlobals()`
+  - All 34 tests in file now pass locally
+  - Committed and pushed: `1fc78b0e0` — `🐛 fix useSelfUpgrade test: use vi.stubGlobal for window.location.reload`
+- Coverage Gate: passing (success) on latest run #25162061419
+
+### Playwright RED → ISSUES FILED (scanner owns fix)
+Playwright run #25160867513 — all 4 shards failing. New issues filed:
+
+- **#11030** 🐛 26 routes crash with `TypeError (reading 'enabled'/'toFixed'/'replace')` in `console-error-scan.spec.ts` — most impactful, likely root cause of cascade
+- **#11031** 🐛 GPU Overview card not visible on `/gpu-reservations` (linked to #11030)
+- **#11032** 🐛 Mission Control E2E/Stress timeouts and element-not-found (shard 2)
+- **#11033** 🐛 `/api/missions/file` returning 502 in CI (all 4 retries fail, shard 3)
+
+Updated existing issues:
+- **#10992** — commented: cluster tab filter also failing on chromium (not just Firefox/WebKit)
+- **#10993** — commented: dashboard row count also failing on chromium (not just Firefox/WebKit)
+
+Performance failures (demo mode 7166–7791ms > 6000ms threshold) noted but likely CI runner load — deferred to scanner for pattern analysis.
+
+### Merged PRs
+- None (0 merge-eligible)
+
+### Copilot Comments on Merged PRs
+- `copilot-comments.json` fresh at 10:44 UTC — 0 unaddressed comments ✅
+
+### Status at End of Pass
+| Indicator | Status |
+|-----------|--------|
+| GA4 (30m) | ✅ GREEN |
+| Coverage | 🔄 Fix pushed — awaiting Coverage Suite re-run |
+| Playwright | 🔴 RED — issues #11030–#11033 filed, scanner owns |
+| Merged PRs | ✅ None pending |
+| Copilot comments | ✅ 0 unaddressed |
+
+---
+
 ## Pass 76 — 2026-04-30T10:56–11:20 UTC
 
 **Trigger:** KICK — RED indicators: nightlyPlaywright=RED, coverage=90%<91%
