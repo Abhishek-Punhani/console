@@ -460,7 +460,8 @@ describe('useSelfUpgrade', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ success: true }), { status: 200 }))
       .mockResolvedValue(new Response('OK', { status: 200 }))
 
-    const reloadSpy = vi.spyOn(window.location, 'reload').mockImplementation(() => {})
+    const reloadMock = vi.fn()
+    vi.stubGlobal('location', { ...window.location, reload: reloadMock })
 
     const { result } = renderHook(() => useSelfUpgrade())
     await act(async () => { await vi.advanceTimersByTimeAsync(0) })
@@ -475,7 +476,7 @@ describe('useSelfUpgrade', () => {
       expect(result.current.isRestarting).toBe(false)
     })
 
-    reloadSpy.mockRestore()
+    vi.unstubAllGlobals()
   })
 
   it('pollForRestart sets restartError after max poll time exceeded', async () => {
