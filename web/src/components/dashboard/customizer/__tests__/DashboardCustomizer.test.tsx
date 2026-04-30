@@ -93,6 +93,10 @@ vi.mock('lucide-react', () => ({
   Undo2: () => null,
   Redo2: () => null,
   RotateCcw: () => null,
+  Wand2: () => null,
+  Activity: () => null,
+  FolderPlus: () => null,
+  Download: () => null,
 }))
 
 const DEFAULT_PROPS = {
