@@ -1,5 +1,53 @@
 # Reviewer Log
 
+## Pass 89 — 2026-05-01T09:21–09:40 UTC
+
+### Trigger
+KICK — CI=87%, nightly=RED, nightlyPlaywright=RED. 73 unaddressed Copilot comments (2 HIGH).
+
+### Pre-flight
+- Branch: `main`, HEAD `add373399` (upstream/main in sync)
+- GA4: **NOMINAL, 0 anomalies** ✅
+- 0 merge-eligible PRs (actionable.json count=0)
+
+### RED Analysis
+
+**nightly=RED** (run #25205585762, finished 07:53 UTC):
+Root cause from pass 88: consistency-test failed with 4 fetch() timeout violations (`fetcherUtils.ts`, `GitHubActivity.tsx`, others) — fixed by PR #11227 + #11232 which both landed on main before the re-triggered nightly (run #25209161349) started at 09:10 UTC.
+Verification: `scripts/consistency-test.sh` on current main → 0 errors, 77 warnings ✅
+Re-triggered nightly still in_progress (26 min of ~60 min run). Should pass.
+
+**nightlyPlaywright=RED** (run #25209161348, re-triggered from pass 88, completed FAILURE):
+Persistent cross-browser failures. Scanner-authored PR #11238 ("add missing mockApiFallback import in Dashboard.spec.ts") opened. Scanner owns.
+
+### Source Fix: Production Bug (MEDIUM → PR #11237)
+
+Copilot comment on PR #11213 flagged `useDeployMissions.ts:490`: `String(match.status) === 'Running'` would never match because the kc-agent `/deployments` endpoint returns lowercase status values (`running`, `deploying`, `failed`) per `pkg/k8s/client.go:513` type comment.
+
+**Impact**: Missions using the agent path were permanently stuck in `'applying'` state — never advancing to `'running'` regardless of replica readiness.
+
+**Fix** (PR #11237 `fix/11213-agent-deploy-status-casing`):
+- `useDeployMissions.ts:485`: `'Running'` → `'running'`
+- `useDeployMissions.test.ts` lines 445/515/551/1008/1307: agent `deployments` mocks lowercased to match wire format (REST-path mocks at 584/729/884/916/1184 kept as `'Running'` — K8s API style)
+- 52 tests pass
+
+### Actions Taken
+
+| Action | Detail |
+|--------|--------|
+| Verified | consistency-test: 0 errors on current main → nightly re-trigger from pass 88 should pass |
+| PR #11237 | `fix(useDeployMissions): lowercase agent deployment status check` — production bug fix |
+| Noted | PR #11235 (HIGH test-name fix) CI in_progress |
+| Noted | nightlyPlaywright scanner PR #11238 in CI |
+
+### HIGH Copilot Comments
+- `preflightCheck-coverage.test.ts:443` (PR #11192): addressed by PR #11235 (open, CI in_progress) ✅
+- `mission-control-stress.spec.ts:435` (PR #11181): Playwright spec → scanner-owned ❌
+
+**Status:** nightly re-trigger in_progress (will pass); PR #11237 production fix open; PR #11235 HIGH comment fix in CI.
+
+---
+
 ## Pass 88 — 2026-05-01T09:01–09:25 UTC
 
 ### Trigger
