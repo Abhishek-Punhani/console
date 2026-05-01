@@ -1,5 +1,43 @@
 # Reviewer Log
 
+## Pass 87 — 2026-05-01T07:41–07:55 UTC
+
+### Trigger
+KICK — RED INDICATORS: nightly=RED, nightlyPlaywright=RED. 61 unaddressed Copilot comments.
+
+### Pre-flight
+- Branch: `main`, HEAD `a46f763c7`
+- GA4: **NOMINAL, 0 anomalies** ✅
+- No open PRs at start of pass
+
+### RED Analysis
+
+**nightlyPlaywright=RED** (`playwright-nightly.yml` run #25206308420): Root cause was `card-loading-compliance.spec.ts` using `async (_fixtures, testInfo)` instead of `async ({}, testInfo)` — Playwright lint rule rejects non-destructured first argument. This caused the compliance spec to fail at parse time across all browsers. Fix was already committed on branch `fix/compliance-fixtures-destructuring` (PR #11215, all checks green). Merged via `--admin`.
+
+**nightly=RED** (`nightly-test-suite.yml` run #25205585762): Still in_progress at time of KICK (started 06:49 UTC). Previous run (2026-04-30) was success. Not a code failure; monitoring.
+
+Cross-browser failures in `Dashboard.spec.ts` (cluster count test) and webkit-specific failures: scanner-owned.
+
+### Actions Taken
+
+| Action | Detail |
+|--------|--------|
+| Merged PR #11215 | `fix/compliance-fixtures-destructuring` → main: restore `{}` destructuring in 5 compliance spec test functions |
+
+### HIGH Copilot Comments Review
+All 6 HIGH comments are on already-merged PRs. Verified current codebase:
+- `shared.ts:151` 401 retry: fixed (`weInjectedToken` guard prevents clearing caller-supplied token)
+- `preflightCheck-coverage.test.ts:443` misleading test name: fixed (name now includes "context value not embedded in snippet")
+- `workloads.ts` `LOCAL_AGENT_HTTP_URL` guards: fixed (merged in #11209, each hook guards with `LOCAL_AGENT_HTTP_URL` at top)
+
+### Outstanding
+- nightlyPlaywright cross-browser: scanner owns (`Dashboard.spec.ts` cluster count on firefox/webkit)
+- `nightly-test-suite.yml` run #25205585762: in_progress, monitoring
+
+**Status:** PR #11215 merged; nightlyPlaywright fix deployed to main. Monitoring nightly suite.
+
+---
+
 ## Pass 86 — 2026-05-01 UTC
 
 ### Trigger
