@@ -389,14 +389,19 @@ async function setupAllMocks(page: Page) {
   await setupMCPMocks(page)
   await setupMissionsFileMock(page)
 
+  // Strict catch-all — logs unmocked API calls instead of silently returning {}
+  // This helps detect when tests hit endpoints that don't have explicit mocks
   await page.route('**/api/**', (route) => {
     const url = route.request().url()
+    // Let specific mocks handle these endpoints
     if (url.includes('/api/me') || url.includes('/api/mcp') ||
         url.includes('/api/health') || url.includes('/api/github') ||
         url.includes('/api/agent') || url.includes('/api/gadget') ||
         url.includes('/api/missions')) {
       return route.fallback()
     }
+    // eslint-disable-next-line no-console
+    console.error(`[mission-control-stress] Unmocked API call: ${url}`)
     route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
   })
 

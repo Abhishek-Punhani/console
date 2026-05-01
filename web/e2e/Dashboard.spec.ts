@@ -1,9 +1,42 @@
 import { test, expect } from '@playwright/test'
-import { setupDashboardTest, mockApiFallback } from './helpers/setup'
+import { setupDashboardTest } from './helpers/setup'
+import { setupStrictDemoMode, API_RESPONSES } from './helpers/api-mocks'
 
 test.describe('Dashboard Page', () => {
   test.beforeEach(async ({ page }) => {
-    await setupDashboardTest(page)
+    // Strict API mocking setup — tracks calls and logs unmocked endpoints
+    await setupStrictDemoMode(page, {
+      logUnmocked: true,
+      failOnUnmocked: false, // Gradual migration — log but don't fail
+      customHandlers: [
+        // MCP endpoints for dashboard cards
+        {
+          pattern: '**/api/mcp/**',
+          handler: async (route) => {
+            await route.fulfill({
+              status: 200,
+              contentType: 'application/json',
+              body: JSON.stringify(API_RESPONSES.mcp()),
+            })
+          },
+        },
+      ],
+    })
+
+    // Navigate to dashboard
+    await page.addInitScript(() => {
+      localStorage.setItem('token', 'demo-token')
+      localStorage.setItem('kc-demo-mode', 'true')
+      localStorage.setItem('kc-has-session', 'true')
+      localStorage.setItem('demo-user-onboarded', 'true')
+      localStorage.setItem('kc-backend-status', JSON.stringify({
+        available: true,
+        timestamp: Date.now(),
+      }))
+    })
+    await page.goto('/')
+    await page.waitForLoadState('domcontentloaded')
+    await page.locator('#root').waitFor({ state: 'visible', timeout: 15000 })
   })
 
   test.describe('Layout and Structure', () => {

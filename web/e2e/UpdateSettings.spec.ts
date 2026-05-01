@@ -1,5 +1,5 @@
 import { test, expect, Page } from '@playwright/test'
-import { mockApiFallback } from './helpers/setup'
+import { setupStrictDemoMode } from './helpers/api-mocks'
 
 /**
  * E2E tests for the Settings > System Updates section.
@@ -39,38 +39,46 @@ async function setupUpdateTest(page: Page): Promise<WsRoutes> {
 
   const wsRoutes: WsRoutes = { routes: [] }
 
-  // Catch-all API mock prevents unmocked requests hanging in webkit/firefox
-  await mockApiFallback(page)
-
-  // Mock auth
-  await page.route('**/api/me', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(MOCK_USER),
-    })
-  )
-
-  // Mock health — default to "ok" (individual tests may override after setup)
-  await page.route('**/health', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ status: 'ok', version: 'dev', oauth_configured: true }),
-    })
-  )
-
-  // Mock MCP / agent HTTP endpoints
-  await page.route('**/api/mcp/**', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ clusters: [], issues: [], events: [], nodes: [] }),
-    })
-  )
-  await page.route('http://127.0.0.1:8585/**', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
-  )
+  // Strict API mocking — logs unmocked calls instead of silently returning {}
+  await setupStrictDemoMode(page, {
+    logUnmocked: true,
+    failOnUnmocked: false,
+    customHandlers: [
+      // Mock auth with test user
+      {
+        pattern: '**/api/me',
+        handler: async (route) =>
+          route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify(MOCK_USER),
+          }),
+      },
+      // Mock health — default to "ok" (individual tests may override after setup)
+      {
+        pattern: '**/health',
+        handler: async (route) => {
+          const url = new URL(route.request().url())
+          if (url.pathname !== '/health') return route.fallback()
+          return route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ status: 'ok', version: 'dev', oauth_configured: true }),
+          })
+        },
+      },
+      // Mock MCP / agent HTTP endpoints
+      {
+        pattern: '**/api/mcp/**',
+        handler: async (route) =>
+          route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ clusters: [], issues: [], events: [], nodes: [] }),
+          }),
+      },
+    ],
+  })
 
   // Mock the kc-agent WebSocket — capture WebSocketRoute handles from callback
   await page.routeWebSocket('ws://127.0.0.1:8585/**', (ws) => {
@@ -84,11 +92,6 @@ async function setupUpdateTest(page: Page): Promise<WsRoutes> {
       }
     })
   })
-
-  // Catch-all for any remaining /api/** endpoints
-  await page.route('**/api/**', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
-  )
 
   // Set auth token + skip onboarding/tour BEFORE navigation
   await page.addInitScript(() => {

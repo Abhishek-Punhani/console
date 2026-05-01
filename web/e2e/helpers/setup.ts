@@ -175,13 +175,18 @@ export async function mockApiFallback(page: Page) {
   // overrides it. Previously the catch-all was registered last and intercepted /api/active-users
   // before the specific mock, returning {} → Number.isFinite(undefined)=false → error/retry
   // re-render cycles in Firefox/webkit causing DOM instability.
-  await page.route('**/api/**', (route) =>
+  //
+  // STRICT MOCKING: Log unmocked API calls to help detect missing endpoints (#11225)
+  await page.route('**/api/**', (route) => {
+    const url = route.request().url()
+    // eslint-disable-next-line no-console
+    console.error(`[mockApiFallback] Unmocked API call: ${url}`)
     route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({}),
     })
-  )
+  })
 
   // Registered AFTER the catch-all → higher priority. Trailing * matches query params too.
   // Returns valid data so useActiveUsers stays stable (no error state / re-renders).
