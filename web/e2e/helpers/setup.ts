@@ -226,6 +226,85 @@ export async function mockApiFallback(page: Page) {
   )
 }
 
+/**
+ * Strict variant of mockApiFallback for suites that must detect missing endpoint mocks.
+ *
+ * #11295 — The permissive mockApiFallback returns HTTP 200/{} for any unmocked
+ * /api/** endpoint. This silently passes tests when components receive {} instead
+ * of the expected array/object shape, masking missing mocks.
+ *
+ * mockApiFallbackStrict returns HTTP 404 for unmocked endpoints instead.
+ * Components that handle errors gracefully will show error state (correct behaviour
+ * in test); components that don't guard against error responses will surface
+ * crashes — which is the intent.
+ *
+ * Use for: smoke.spec.ts, fullstack-smoke.spec.ts, route-coverage.spec.ts,
+ * console-error-scan tests. These suites benefit from strict mock coverage.
+ *
+ * Keep using mockApiFallback for: visual regression, perf, and tests that
+ * intentionally exercise degraded states.
+ *
+ * Register BEFORE specific mocks (Playwright matches in reverse order).
+ */
+export async function mockApiFallbackStrict(page: Page) {
+  // Register /health, active-users, dashboards, and kc-agent mocks identically
+  // to mockApiFallback so the app shell loads correctly.
+  await page.route('**/health', (route) => {
+    const url = new URL(route.request().url())
+    if (url.pathname !== '/health') return route.fallback()
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'ok',
+        version: 'dev',
+        oauth_configured: false,
+        in_cluster: false,
+        no_local_agent: true,
+        install_method: 'dev',
+      }),
+    })
+  })
+
+  // Catch-all: return 404 for unmocked endpoints. 404 is a real HTTP error
+  // that components should handle — it surfaces missing mocks as test failures
+  // rather than silent empty-state renders.
+  await page.route('**/api/**', (route) => {
+    const url = route.request().url()
+    // eslint-disable-next-line no-console
+    console.error(`[mockApiFallbackStrict] Unmocked API call (returning 404): ${url}`)
+    route.fulfill({
+      status: 404,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: `No mock registered for ${url}` }),
+    })
+  })
+
+  await page.route('**/api/active-users*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ activeUsers: 1, totalConnections: 1 }),
+    })
+  )
+
+  await page.route('**/api/dashboards*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([]),
+    })
+  )
+
+  await page.route('http://127.0.0.1:8585/**', (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'Service unavailable (test mock)' }),
+    })
+  )
+}
+
 export async function setupDemoMode(page: Page) {
   await mockApiFallback(page)
   // Seed localStorage before page scripts execute — prevents the app from
