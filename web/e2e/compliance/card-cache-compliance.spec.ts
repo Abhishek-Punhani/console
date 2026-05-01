@@ -114,7 +114,7 @@ const BATCH_LOAD_TIMEOUT_MS = 30_000
  * CPU contention.  5s gives the async loadFromStorage() path enough headroom
  * after a full page navigation fallback.
  */
-const WARM_RETURN_WAIT_MS = !!process.env.CI ? 5_000 : 3_000
+const WARM_RETURN_WAIT_MS = process.env.CI ? 5_000 : 3_000
 /** Polling interval (ms) for the resilient warm-snapshot capture loop. */
 const WARM_POLL_INTERVAL_MS = 200
 /** Max retry attempts for page.evaluate calls that may race with navigation */
@@ -126,7 +126,7 @@ const EVALUATE_RETRY_DELAY_MS = 500
  * preview servers under load. 20s default is too tight when the server is
  * already serving other suites (#9101).
  */
-const BATCH_NAV_TIMEOUT_MS = !!process.env.CI ? 90_000 : 45_000
+const BATCH_NAV_TIMEOUT_MS = process.env.CI ? 90_000 : 45_000
 /**
  * Overall test timeout (ms). 300s base × 2 CI multiplier = 600s, matching
  * the suite wall-clock cap in run-all-tests.sh (#9101).
@@ -138,7 +138,7 @@ const CI_TIMEOUT_MULTIPLIER = 2
  * CI shared runners exhibit 2-3× slower React hydration due to CPU
  * contention and virtualisation overhead, so we apply a multiplier.
  */
-const WARM_TTC_THRESHOLD_MS = !!process.env.CI ? 1_000 : 500
+const WARM_TTC_THRESHOLD_MS = process.env.CI ? 1_000 : 500
 
 
 // Mock data, setupAuth, setupLiveMocks, setLiveColdMode, navigateToBatch,
@@ -556,11 +556,10 @@ test('card cache compliance — storage and retrieval', async ({ page }, testInf
   // run-all-tests.sh. No testInfo.setTimeout was set before (#9101), so the
   // test ran against the global config timeout (1200s) which meant timeout
   // errors only surfaced as wall-clock kills.
-  testInfo.setTimeout(!!process.env.CI ? CACHE_TEST_TIMEOUT_MS * CI_TIMEOUT_MULTIPLIER : CACHE_TEST_TIMEOUT_MS)
+  testInfo.setTimeout(process.env.CI ? CACHE_TEST_TIMEOUT_MS * CI_TIMEOUT_MULTIPLIER : CACHE_TEST_TIMEOUT_MS)
 
   const allBatchResults: Array<{ batchIndex: number; cards: CardCacheResult[] }> = []
   const coldSnapshots: Map<string, ColdLoadSnapshot> = new Map()
-  let totalCards = 0
 
   page.on('console', (msg) => {
     if (msg.type() === 'error') console.log(`[Browser ERROR] ${msg.text()}`)
@@ -591,7 +590,7 @@ test('card cache compliance — storage and retrieval', async ({ page }, testInf
   // ── Phase 2: Warmup — prime Vite module cache ──────────────────────────
   console.log('[CacheTest] Phase 2: Warmup — priming module cache')
   const warmupManifest = await navigateToBatch(page, 0, 180_000)
-  totalCards = warmupManifest.totalCards
+  const totalCards = warmupManifest.totalCards
   const totalBatches = Math.ceil(totalCards / BATCH_SIZE)
   console.log(`[CacheTest] Total cards: ${totalCards}, batches: ${totalBatches}`)
   // Wait for warmup batch to fully load

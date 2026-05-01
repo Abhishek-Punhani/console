@@ -1,5 +1,39 @@
 # Reviewer Log
 
+## Pass 84 — 2026-05-01T07:10 UTC
+
+### Trigger
+KICK — RED: nightlyPlaywright=RED, nightlyRel=RED. 62 unaddressed Copilot comments.
+
+### Pre-flight
+- `git pull /tmp/hive` — skipped (divergent branches, unrelated repo)
+- Branch: `fix/11210-medium-comments` (4 commits ahead of origin/main)
+- GA4: **NOMINAL, 0 anomalies** ✅
+
+### RED Analysis
+- **nightlyPlaywright=RED**: Scanner owns (issue #10433). No file action.
+- **nightlyRel=RED**: Release run #139 `in_progress` — Docker multi-arch build still building (started 06:05 UTC). Not a code failure; 0 failed jobs. Previous runs 135–138 all success. Monitoring.
+
+### Copilot Comments
+All 6 HIGH source-file comments verified addressed (passes 78–81). No regressions.
+
+| PR | Comment | Status |
+|----|---------|--------|
+| #11209 | workloads.ts:1543,1612,1681,1750 LOCAL_AGENT_URL stale const | ✅ Fixed in d6b9563e0 |
+| #11209 | workloads.ts:1262 useHPAs/useDeployments guard after fetch | ✅ Fixed in d6b9563e0 |
+
+Verified: workloads.ts now uses `LOCAL_AGENT_HTTP_URL` (live ref) with guard `&& LOCAL_AGENT_HTTP_URL` in every agent-fetch block. No `LOCAL_AGENT_URL` (stale const) in workloads.ts. Build ✅, lint clean in changed file ✅.
+
+### PR #11210 Status
+- All non-blocking checks passing (coverage-gate, ts-null-safety, pr-check, attribute, classify)
+- 9 checks still in_progress (build, visual, TTFI, smoke)
+- 0 failures
+
+### Status
+Monitoring PR #11210 CI. Will merge on green.
+
+---
+
 ## Pass 79 — 2026-05-01T05:10–05:25 UTC
 
 **Trigger:** KICK — RED: nightlyPlaywright=RED; 54 unaddressed Copilot comments
@@ -604,3 +638,72 @@ All 6 HIGH comments addressed. 0 remaining HIGH in source files.
   - Source fix committed: `playwright.config.ts` excludes unsupported nightly tests
 
 **Status: BLOCKED on PR creation (rate limit). Branch pushed, ready to merge once PR is open.**
+
+---
+
+## Pass 82 — 2026-05-01
+
+### RED Indicators
+- **nightlyRel=RED**: GoReleaser GitHub API secondary rate limit (run #134, 2026-04-27). Transient infrastructure issue — not a code fix.
+- **nightlyPlaywright=RED**: Ongoing; scanner owns E2E test fixes. Root cause (workloads infinite loading) addressed via source fix below.
+
+### Source File Fixes (PR #11210)
+
+| File | Issue | Fix |
+|------|-------|-----|
+| `workloads.ts` | `LOCAL_AGENT_URL` const-snapshot not updated by `suppressLocalAgent()` (MEDIUM #11209 ×6) | Replace with `LOCAL_AGENT_HTTP_URL` directly; add guard before each agent fetch |
+| `workloads-coverage.test.ts` | Unused `LOCAL_AGENT_URL` in shared mock (MEDIUM #11184) | Remove it; add explicit `LOCAL_AGENT_HTTP_URL` to network mock |
+| `workloads.core.test.ts` | Same | Same |
+| `handlers.fixtures.ts` | `let savedCards/sharedDashboards` + reassignment-based reset (MEDIUM #11186) | `const` + deletion-based reset; preserves object identity |
+| `useMetricsHistory.ts` | Dead `!= null` checks after type predicate (MEDIUM #11176) | Remove redundant ternaries |
+| `card-loading-compliance.spec.ts` | `{}` empty destructure (lint) | `_fixtures` |
+| `card-cache-compliance.spec.ts` | `let totalCards` pre-declared then assigned (lint) | `const` at point of assignment |
+
+### PR Created
+- PR #11210 → `fix/11210-medium-comments` → main
+
+### HIGH Copilot Comments
+All 6 HIGH source-file comments remain addressed from passes 78–81. No new HIGH comments.
+
+---
+
+## Pass 83 — 2026-05-01T06:23–07:05 UTC
+
+### Trigger
+KICK — RED indicators: nightlyPlaywright=RED, nightlyRel=RED. 62 unaddressed Copilot comments.
+
+### RED Indicator Analysis
+
+**nightlyRel=RED**: Release workflow run #25204538900 started at 06:05 UTC. Docker multi-platform build (linux/amd64 + linux/arm64) in progress — not a code failure. Previous nightlyRel RED (per pass 82) was GoReleaser GitHub API secondary rate limit — transient infrastructure issue. No code fix possible; monitoring.
+
+**nightlyPlaywright=RED**: Nightly cross-browser failures on webkit/firefox/mobile-safari. Source root causes addressed:
+- `workloads.ts` loading guards (merged in #11209)
+- `playwright.config.ts` nightly spec exclusions (merged in #11209)
+Scanner owns E2E test fixes for remaining webkit/firefox/mobile failures.
+
+### Source File Fixes (committed to `fix/11210-medium-comments`)
+
+| File | Issue | Fix |
+|------|-------|-----|
+| `card-cache-compliance.spec.ts` lines 117,129,141,559 | `!!process.env.CI` redundant double negation (`no-extra-boolean-cast`) | Remove `!!` — ternary already coerces to boolean |
+
+These 4 errors were missed in pass 82 (which fixed `totalCards` and `_fixtures` in the same file).
+
+### Commit
+`ae47e1b75` — 🐛 fix: remove redundant double negation in card-cache-compliance
+
+### PR Status
+- PR #11210 (`fix/11210-medium-comments`) — open, CI running
+- No merge-eligible PRs (CI in_progress)
+
+### HIGH Copilot Comments
+All 6 HIGH source-file comments remain addressed from passes 78–81:
+- `shared.ts` 401 retry ✅ (PR #11203)
+- `preflightCheck-coverage.test.ts` misleading test name ✅ (PR #11205)
+- E2E HIGH comments (Login.spec.ts, mission-control-stress.spec.ts) → scanner-owned
+
+### Outstanding
+- nightlyRel: monitoring Docker build completion
+- nightlyPlaywright: waiting for next nightly run post-source-fixes
+
+**Status:** Source fixes committed; PR #11210 in CI. Monitoring nightlyRel completion.
