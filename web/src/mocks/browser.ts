@@ -70,13 +70,13 @@ declare global {
   }
 }
 
-// Apply a scenario by name — resets previous scenario handlers first
-// to prevent stale overrides from shadowing new expectations (#7420).
+// Apply a scenario by name — resets to fresh default handlers first,
+// then overlays the scenario, to prevent stale mutable state from
+// carrying over into the scenario (#7420, #11020).
 export function applyScenario(name: keyof typeof scenarios) {
   const scenarioHandlers = scenarios[name]
   if (scenarioHandlers) {
-    worker.resetHandlers()
-    worker.use(...scenarioHandlers)
+    worker.resetHandlers(...createHandlers(), ...scenarioHandlers)
   }
 }
 

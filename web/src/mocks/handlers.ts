@@ -12,7 +12,7 @@
  * 
  * Example test setup:
  * ```ts
- * import { createHandlers } from 'mocks/handlers'
+ * import { createHandlers } from '@/mocks/handlers'
  * 
  * beforeEach(() => {
  *   server.resetHandlers(...createHandlers())
@@ -33,7 +33,6 @@ export {
   getDefaultSavedCards,
   getDefaultSharedDashboards,
   // Legacy exports - DEPRECATED, use factory functions above
-  currentUser,
   savedCards,
   sharedDashboards,
   pruneRegistry,

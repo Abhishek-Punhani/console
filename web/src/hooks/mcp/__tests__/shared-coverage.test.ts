@@ -220,8 +220,104 @@ describe('agentFetch — token injection and signal fallback', () => {
 })
 
 // ============================================================================
-// getAgentToken — GA4 failure detection
+// agentFetch — 401 retry path
 // ============================================================================
+describe('agentFetch — 401 retry with stale token', () => {
+  const originalFetch = globalThis.fetch
+
+  beforeEach(() => {
+    _resetAgentTokenState()
+  })
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    localStorage.clear()
+    _resetAgentTokenState()
+  })
+
+  it('clears cached token and retries with fresh token on 401', async () => {
+    localStorage.setItem(AGENT_TOKEN_STORAGE_KEY, 'stale-token')
+    const mockFetch = vi.fn()
+    // First call: 401 with stale token
+    mockFetch.mockResolvedValueOnce(new Response('Unauthorized', { status: 401 }))
+    // Second call: /api/agent/token returns a new token
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ token: 'fresh-token' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    // Third call: retry with fresh token returns 200
+    mockFetch.mockResolvedValueOnce(new Response('ok', { status: 200 }))
+    globalThis.fetch = mockFetch
+
+    const result = await agentFetch('http://localhost:8090/clusters')
+
+    expect(result.status).toBe(200)
+    // Fresh token should have been used in the retry request
+    const retryHeaders = mockFetch.mock.calls[2][1]?.headers as Headers
+    expect(retryHeaders.get('Authorization')).toBe('Bearer fresh-token')
+    // Old token should have been removed from localStorage
+    expect(localStorage.getItem(AGENT_TOKEN_STORAGE_KEY)).toBeNull()
+  })
+
+  it('does NOT retry when caller supplied their own Authorization header', async () => {
+    localStorage.setItem(AGENT_TOKEN_STORAGE_KEY, 'agent-token')
+    const mockFetch = vi.fn().mockResolvedValue(new Response('Unauthorized', { status: 401 }))
+    globalThis.fetch = mockFetch
+
+    const result = await agentFetch('http://localhost:8090/clusters', {
+      headers: { Authorization: 'Bearer caller-token' },
+    })
+
+    // Should return the 401 as-is without retrying
+    expect(result.status).toBe(401)
+    // fetch should only be called once (no retry)
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    // Agent token should not have been cleared
+    expect(localStorage.getItem(AGENT_TOKEN_STORAGE_KEY)).toBe('agent-token')
+  })
+
+  it('does NOT retry on 401 when there was no token to inject', async () => {
+    localStorage.removeItem(AGENT_TOKEN_STORAGE_KEY)
+    const mockFetch = vi.fn()
+    // /api/agent/token returns empty (no token available)
+    mockFetch.mockResolvedValueOnce(new Response('{}', {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    // Actual request returns 401
+    mockFetch.mockResolvedValueOnce(new Response('Unauthorized', { status: 401 }))
+    globalThis.fetch = mockFetch
+
+    const result = await agentFetch('http://localhost:8090/clusters')
+
+    expect(result.status).toBe(401)
+    // No retry: fetch was called at most twice (token fetch + actual request)
+    expect(mockFetch.mock.calls.length).toBeLessThanOrEqual(2)
+  })
+
+  it('returns the 401 when fresh token is the same as the stale one', async () => {
+    localStorage.setItem(AGENT_TOKEN_STORAGE_KEY, 'same-token')
+    const mockFetch = vi.fn()
+    mockFetch.mockResolvedValueOnce(new Response('Unauthorized', { status: 401 }))
+    // Token endpoint returns the same token
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ token: 'same-token' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    globalThis.fetch = mockFetch
+
+    const result = await agentFetch('http://localhost:8090/clusters')
+
+    // No retry because fresh === stale; original 401 response returned
+    expect(result.status).toBe(401)
+  })
+})
+
+
 describe('getAgentToken — emits GA4 on failure', () => {
   const originalFetch = globalThis.fetch
 

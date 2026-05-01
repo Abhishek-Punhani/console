@@ -139,9 +139,11 @@ export async function agentFetch(input: RequestInfo | URL, init?: RequestInit): 
   const signal = init?.signal ?? AbortSignal.timeout(MCP_HOOK_TIMEOUT_MS)
   const response = await fetch(input, { ...init, headers, signal })
 
-  // kc-agent generates a new token on each restart. If we get 401 with a
-  // cached token, clear it and retry once with a fresh token from the backend.
-  if (response.status === 401 && token) {
+  // kc-agent generates a new token on each restart. If we get 401 and we
+  // actually injected our token (caller had no pre-existing Authorization
+  // header), clear the cached token and retry once with a fresh one.
+  const weInjectedToken = token && !new Headers(init?.headers).has('Authorization')
+  if (response.status === 401 && weInjectedToken) {
     localStorage.removeItem(AGENT_TOKEN_STORAGE_KEY)
     agentTokenPromise = null
     agentTokenNegativeCacheUntil = 0

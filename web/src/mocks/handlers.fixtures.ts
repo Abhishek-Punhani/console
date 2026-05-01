@@ -404,8 +404,8 @@ export function pruneRegistry(registry: Record<string, unknown>) {
  * with a clean registry state (#11035).
  */
 export function resetShareRegistries() {
-  Object.keys(savedCards).forEach(key => delete savedCards[key])
-  Object.keys(sharedDashboards).forEach(key => delete sharedDashboards[key])
+  savedCards = {}
+  sharedDashboards = {}
 }
 
 /** Get default state for savedCards (empty object) */

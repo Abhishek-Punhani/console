@@ -2107,11 +2107,18 @@ export function createHandlers() {
 
   // ── Test utilities ─────────────────────────────────────────────────
   // Reset share registries to prevent cross-test pollution (#11035).
+  // Guarded by X-Test-Request header so it is not callable in normal
+  // demo-mode browser sessions — only automated test clients send this header.
   // Tests should call this in beforeEach:
   //   test.beforeEach(async ({ page }) => {
-  //     await page.request.post('/__test/reset')
+  //     await page.request.post('/__test/reset', {
+  //       headers: { 'X-Test-Request': '1' },
+  //     })
   //   })
-  http.post('/__test/reset', () => {
+  http.post('/__test/reset', ({ request }) => {
+    if (!request.headers.get('X-Test-Request')) {
+      return HttpResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
     resetShareRegistries()
     return HttpResponse.json({ success: true })
   }),
