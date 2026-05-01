@@ -266,7 +266,7 @@ export function PodLogs({ config }: PodLogsProps) {
       </div>
 
       {/* Log viewer */}
-      <div className="flex-1 min-h-0 rounded-lg border border-border bg-slate-950 overflow-hidden">
+      <div className="flex-1 min-h-0 rounded-lg border border-border bg-card overflow-hidden">
         {logsError ? (
           <div className="h-full flex items-center justify-center gap-2 p-4 text-xs text-red-400">
             <AlertCircle className="w-4 h-4 shrink-0" />
