@@ -28,6 +28,7 @@ vi.mock('../constants', async (importOriginal) => {
 
 vi.mock('../analytics', () => ({
   emitError: vi.fn(),
+  emitHttpError: vi.fn(),
   emitSessionExpired: vi.fn(),
 }))
 
