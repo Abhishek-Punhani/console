@@ -48,7 +48,7 @@ func TestTopologyGetTopology_Success(t *testing.T) {
 			},
 		},
 	}
-	_, err := dynClient.Resource(gvrKindsToGVR(gvrKinds, "ServiceExportList")).Namespace("default").Create(context.Background(), se, metav1.CreateOptions{})
+	_, err := dynClient.Resource(gvrKindsToGVR(t, gvrKinds, "ServiceExportList")).Namespace("default").Create(context.Background(), se, metav1.CreateOptions{})
 	require.NoError(t, err)
 
 	req, err := http.NewRequest(http.MethodGet, "/api/topology", nil)
@@ -74,6 +74,9 @@ func TestTopologyGetTopology_Success(t *testing.T) {
 			foundService = true
 			assert.Equal(t, "default", node["namespace"])
 			assert.Equal(t, "test-cluster", node["cluster"])
+			meta, ok := node["metadata"].(map[string]interface{})
+			require.True(t, ok, "service node metadata should be a map")
+			assert.Equal(t, "test-svc", meta["serviceName"], "metadata.serviceName should match the ServiceExport name")
 		}
 		if node["type"] == "cluster" && node["label"] == "test-cluster" {
 			foundCluster = true

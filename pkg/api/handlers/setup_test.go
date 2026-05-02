@@ -119,14 +119,19 @@ func setupTestEnv(t *testing.T) *testEnv {
 	}
 }
 
-// gvrKindsToGVR is a helper to find the GVR for a given list kind
-func gvrKindsToGVR(gvrKinds map[schema.GroupVersionResource]string, listKind string) schema.GroupVersionResource {
+// gvrKindsToGVR is a helper to find the GVR for a given list kind.
+// It calls t.Fatalf if the list kind is not found, so a missing entry
+// in gvrKinds causes an immediate, descriptive test failure rather than
+// a silent empty-GVR that only surfaces as a confusing runtime error.
+func gvrKindsToGVR(t *testing.T, gvrKinds map[schema.GroupVersionResource]string, listKind string) schema.GroupVersionResource {
+	t.Helper()
 	for gvr, kind := range gvrKinds {
 		if kind == listKind {
 			return gvr
 		}
 	}
-	return schema.GroupVersionResource{}
+	t.Fatalf("gvrKindsToGVR: list kind %q not found in gvrKinds map", listKind)
+	return schema.GroupVersionResource{} // unreachable; satisfies compiler
 }
 
 // injectDynamicCluster creates a fake dynamic client with custom list kinds (for CRD resources

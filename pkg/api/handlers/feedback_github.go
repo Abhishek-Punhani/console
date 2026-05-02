@@ -641,7 +641,10 @@ func (h *FeedbackHandler) createGitHubIssueInRepo(ctx context.Context, request *
 		for _, call := range failedApiCalls[:shown] {
 			detail := ""
 			if call.Detail != "" {
-				detail = fmt.Sprintf(": %s", call.Detail)
+				// Escape backticks and newlines so the detail cannot break out of the
+				// inline code span or inject arbitrary markdown into the issue body.
+				safeDetail := strings.NewReplacer("`", "'", "\n", " ", "\r", "").Replace(call.Detail)
+				detail = fmt.Sprintf(": %s", safeDetail)
 			}
 			apiLines.WriteString(fmt.Sprintf("- `[%s]` **%s** `%s`%s\n", call.Timestamp, call.Status, call.Endpoint, detail))
 		}

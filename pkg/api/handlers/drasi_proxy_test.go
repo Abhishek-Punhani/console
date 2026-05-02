@@ -120,7 +120,7 @@ func TestProxyDrasi_Platform(t *testing.T) {
 		// /api/v1/namespaces/drasi-system/services/http:drasi-api:8080/proxy/v1/sources
 		assert.Contains(t, r.URL.Path, "/services/http:drasi-api:8080/proxy/v1/sources")
 		assert.Contains(t, r.URL.RawQuery, "foo=bar")
-		
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"platform":"ok"}`))

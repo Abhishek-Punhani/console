@@ -48,7 +48,7 @@ func TestCRDListCRDs_Success(t *testing.T) {
 			},
 		},
 	}
-	_, err := dynClient.Resource(gvrKindsToGVR(gvrKinds, "CustomResourceDefinitionList")).Create(context.Background(), crd, metav1.CreateOptions{})
+	_, err := dynClient.Resource(gvrKindsToGVR(t, gvrKinds, "CustomResourceDefinitionList")).Create(context.Background(), crd, metav1.CreateOptions{})
 	require.NoError(t, err)
 
 	req, err := http.NewRequest(http.MethodGet, "/api/crds", nil)
